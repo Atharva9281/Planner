@@ -1,0 +1,134 @@
+import Link from 'next/link';
+import UploadSlots from './import/UploadSlots';
+import { ParsedImport } from '@/lib/import/types';
+
+/**
+ * The working page before it has any data: the real tiles and the real table, drawn empty, with
+ * the upload panel sitting inside them.
+ *
+ * The point is that nothing moves when the files land. The advisor sees the shape of the page
+ * first, then it fills in — rather than one screen being swapped for a completely different one.
+ *
+ * The ghost table is absolutely positioned so the upload card sets the height; the other way
+ * round and a card taller than five empty rows gets clipped.
+ */
+
+const GHOST_ROWS = 7;
+const COLUMNS = [
+  'Stock · target',
+  'Toward the floor',
+  'Holding now',
+  'Toward the ceiling',
+  'Lot-aware target',
+  'What if I held…',
+];
+
+const TILES = ['Total account', 'Cash', 'Ceiling', 'Floor'];
+
+/** A dimmed bar standing in for a value that has not arrived yet. */
+function Bar({ w }: { w: string }) {
+  return <div className="h-2.5 rounded-full bg-line" style={{ width: w }} />;
+}
+
+export default function SkeletonWorkspace({
+  onReady,
+  onAddStock,
+}: {
+  onReady: (parsed: ParsedImport) => void;
+  onAddStock: () => void;
+}) {
+  return (
+    <>
+      {/* ---- the tiles, empty ---- */}
+      <div className="mb-4 flex flex-wrap gap-3" aria-hidden>
+        {TILES.map((label) => (
+          <div
+            key={label}
+            className="min-w-[9rem] flex-1 rounded-xl border border-line bg-panel px-5 py-4"
+          >
+            <div className="font-mono text-[22px] font-semibold leading-none text-line">—</div>
+            <div className="mt-1.5 text-[11.5px] font-semibold uppercase tracking-[0.04em] text-ink-faint">
+              {label}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ---- the table, drawn but empty, with the upload panel inside it ---- */}
+      <section className="panel overflow-hidden">
+        <div className="px-4 pt-4 pb-3">
+          <h2 className="panel-title">Lot-aware view, target % shown for every row</h2>
+        </div>
+
+        <div className="relative">
+          <div className="absolute inset-0 overflow-hidden" aria-hidden>
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  {COLUMNS.map((c, i) => (
+                    <th
+                      key={c}
+                      className={`th ${i === 0 ? 'th-lead' : ''} ${
+                        i === COLUMNS.length - 1 ? 'rounded-tr-lg' : ''
+                      }`}
+                    >
+                      {c}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="opacity-40">
+                {Array.from({ length: GHOST_ROWS }).map((_, r) => (
+                  <tr key={r} className={r % 2 ? 'bg-panel-alt' : 'bg-panel'}>
+                    {COLUMNS.map((c) => (
+                      <td key={c} className="td">
+                        <div className="flex flex-col gap-2">
+                          <Bar w="58%" />
+                          <Bar w="38%" />
+                        </div>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* The panel that actually does something, over the top of the empty shape. */}
+          <div className="relative flex justify-center px-4 pt-16 pb-10 sm:px-8">
+            <div className="w-full max-w-3xl rounded-2xl border border-line bg-panel p-6 shadow-[0_16px_50px_rgba(20,23,30,0.16)] sm:p-7">
+              <div className="text-center">
+                <h3 className="text-xl font-bold tracking-[-0.01em]">Load a portfolio</h3>
+                <p className="mx-auto mt-1.5 max-w-lg text-[14px] leading-relaxed text-ink-soft">
+                  Two exports from your custodian. Upload each one below and the table fills in.
+                </p>
+              </div>
+
+              <div className="mt-6">
+                <UploadSlots onReady={onReady} />
+              </div>
+
+              <p className="mt-6 border-t border-line-soft pt-5 text-center text-[13.5px] text-ink-soft">
+                No files to hand? You can{' '}
+                <button
+                  className="font-semibold text-accent underline underline-offset-2 hover:text-accent-deep"
+                  onClick={onAddStock}
+                >
+                  enter a portfolio by hand
+                </button>{' '}
+                or{' '}
+                <Link
+                  className="font-semibold text-accent underline underline-offset-2 hover:text-accent-deep"
+                  href="/example"
+                >
+                  open the worked example
+                </Link>
+                .
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}

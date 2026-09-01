@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cash Deployment Explorer, Lot-Aware
 
-## Getting Started
+A single-portfolio tool for putting idle cash to work one decision at a time. Every "buy to
+target" figure is checked against the nearest 100-share lot before it is offered, and every
+position is measured against its own drift band rather than a single target number.
 
-First, run the development server:
+It runs entirely in the browser. Nothing is uploaded anywhere.
+
+## What it reads
+
+Two exports from the custodian, dropped onto the page:
+
+**The model export** — what to hold and in what proportion. Five columns are read from it and
+nothing else: `Symbol`, `Type`, `Allocation %`, `Min Drift %`, `Max Drift %`. Its `USD CASH` row
+supplies the cash target and band. The model carries no prices, and none are invented for it.
+
+**The holdings export** — what the account actually holds. The `Asset Class` column decides
+everything:
+
+| Asset class | What happens |
+| --- | --- |
+| `Cash and Equiv` | The row's **Quantity** is the cash balance |
+| `Stocks / ETFs Sleeve`, `Index` | A position, and tradeable |
+| `Fixed Income Sleeve` | Shown and counted toward account value, never traded |
+| `Listed Option` | Dropped entirely — not a position, not part of account value |
+| anything else | Held and shown, but not traded |
+
+Prices come from the holdings file alone. Market value is computed as quantity x price rather
+than read from the file, and every weight is that value over the account total.
+
+## The one idea underneath the arithmetic
+
+A band is a percentage of **total account value**, so its width in dollars moves whenever cash
+moves, whenever a price changes, and whenever a holding is sold. Nothing caches a total.
+
+Within that, the lot rule: convert the target weight to shares, look at the nearest multiple of
+100, and take it **only if its resulting weight still lands inside the band**. The band is a
+mandate; a tidy share count never justifies breaking it.
+
+## Running it
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3000
+npm test        # 105 tests
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Three routes: `/` to choose, `/example` for a worked example with invented figures, and
+`/portfolio` for a real account. The two are independent workspaces held per browser tab, so
+moving between them — including with the browser's Back button — never destroys the other.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Layout
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+src/lib/engine.ts        all the math, pure functions over a portfolio
+src/lib/actions.ts       state transitions, each returning a new state
+src/lib/import/          reading the two .xlsx exports
+src/lib/xlsx/            writing the trade log back out as a workbook
+src/components/          the table, the panels, the modals
+```
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`src/lib/engine.ts` is the place to start. Everything visible is derived from it.
