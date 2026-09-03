@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { parseSheets } from '@/lib/import/parse';
 import { readWorkbook } from '@/lib/import/workbook';
 import { ParsedImport } from '@/lib/import/types';
+import { money } from '@/lib/format';
 
 /**
  * Two files, two slots.
@@ -51,12 +52,17 @@ async function readSlot(file: File, kind: Kind): Promise<Slot> {
         : 'No holdings found. A holdings export needs a Symbol column and a Quantity column.',
     );
   }
+  /* An account that has been funded but not yet invested reads as zero positions, which on its
+     own looks like a file that failed. Say what it does carry instead. */
+  const what =
+    holdings.positions.length === 0 && holdings.cashFound
+      ? `cash only · ${money(holdings.cash)}`
+      : `${holdings.positions.length} positions`;
+
   return {
     file,
     parsed,
-    summary: `${holdings.positions.length} positions${
-      holdings.accountName ? ` · ${holdings.accountName}` : ''
-    }`,
+    summary: `${what}${holdings.accountName ? ` · ${holdings.accountName}` : ''}`,
   };
 }
 

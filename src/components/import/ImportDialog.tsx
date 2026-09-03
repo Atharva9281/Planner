@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import Modal from '../Modal';
-import { applyImport, pickModel } from '@/lib/import/apply';
-import { offModelSymbols } from '@/lib/import/parse';
+import { NumInput } from '../Inputs';
+import { applyImport, importIssues, pickModel } from '@/lib/import/apply';
+import { offModelSymbols, unpricedSymbols } from '@/lib/import/parse';
 import { ParsedImport, Resolution } from '@/lib/import/types';
 import { money } from '@/lib/format';
 import { ExplorerState } from '@/lib/types';
@@ -14,9 +15,11 @@ import { ExplorerState } from '@/lib/types';
  * to, holdings the model has no row for. Each of those is put in front of the advisor rather than
  * guessed at, because a wrong answer here moves every number in the tool.
  *
- * Prices are not among them. The model export carries targets and bands and no prices at all, so
- * a model position the account does not hold simply arrives without one, and the result table
- * below says so. Nothing here invents market data.
+ * Prices are the largest of them, and they are asked for rather than invented. The model export
+ * carries targets and bands and no prices at all, so a position the account does not hold has
+ * none anywhere — which for an account being opened is every position in the model. Those get a
+ * field each here. So does the cash balance, when no file supplies one. Nothing is guessed, and
+ * anything left blank arrives blank rather than arriving wrong.
  */
 export default function ImportDialog({
   initial,
@@ -41,6 +44,22 @@ export default function ImportDialog({
     () => (parsed ? applyImport(parsed, resolution) : null),
     [parsed, resolution],
   );
+
+  /* What the two files could not answer between them. Recomputed as the advisor types, so the
+     unpriced list shrinks in front of them rather than reporting the state they arrived in. */
+  const issues = useMemo(
+    () => (parsed ? importIssues(parsed, resolution) : null),
+    [parsed, resolution],
+  );
+
+  const setPrice = (sym: string, price: number) =>
+    setResolution((r) => ({ ...r, prices: { ...r.prices, [sym]: price } }));
+
+  /* Every symbol the files cannot price, which is what decides how many fields to draw. The
+     count beside them comes from `issues.unpriced` instead, so it falls as prices are entered
+     while the fields themselves stay put — a row that vanished the moment it was filled in
+     would reflow the list under the advisor's hands. */
+  const needPrice = parsed && model ? unpricedSymbols(model, parsed.holdings) : [];
 
   const nothingFound = parsed && !model && !parsed.holdings;
   // Holdings alone cannot drive the tool: targets and bands live in the model export.
@@ -69,7 +88,11 @@ export default function ImportDialog({
                   : preview &&
                     `${preview.portfolio.stocks.length} positions · ${money(
                       preview.portfolio.cash,
-                    )} cash`}
+                    )} cash${
+                      issues && issues.unpriced.length > 0
+                        ? ` · ${issues.unpriced.length} without a price`
+                        : ''
+                    }`}
               </span>
               <button
                 className="btn-solid"
@@ -118,7 +141,13 @@ export default function ImportDialog({
                 >
                   <span className="truncate text-[13.5px] font-semibold">{s.name}</span>
                   <span className="shrink-0 font-mono text-[12.5px] text-ink-soft">
-                    {s.read === 'skipped' ? 'not recognised' : `${s.read} · ${s.rows} rows`}
+                    {/* "holdings · 0 rows" reads as a file that failed. A funded account with
+                        nothing bought yet is the normal state of a new account, so say that. */}
+                    {s.read === 'skipped'
+                      ? 'not recognised'
+                      : s.read === 'holdings' && s.rows === 0
+                        ? 'holdings · cash only'
+                        : `${s.read} · ${s.rows} rows`}
                   </span>
                 </div>
               ))}
@@ -192,6 +221,82 @@ export default function ImportDialog({
                 )}
 
               </div>
+            </section>
+          )}
+
+          {/* ---------- what the files could not answer ----------
+
+               An account being opened has a model and a cash balance and nothing else: no
+               position is held, so no position has a price, and the model export never carries
+               one. Every figure here is one the two files genuinely cannot supply, asked for
+               once, before the table is built on top of them. */}
+          {issues && (issues.needsCash || needPrice.length > 0) && (
+            <section>
+              <div className="modal-section">
+                <h3>What the files do not carry</h3>
+                <span
+                  className={`font-mono text-[12.5px] tabular-nums ${
+                    issues.unpriced.length > 0 ? 'font-semibold text-warn' : 'text-buy'
+                  }`}
+                >
+                  {issues.unpriced.length > 0
+                    ? `${issues.unpriced.length} still to fill in`
+                    : 'all filled in'}
+                </span>
+              </div>
+
+              {needPrice.length > 0 && (
+                <p className="mb-4 max-w-2xl text-[13.5px] leading-relaxed text-ink-soft">
+                  The model export sets targets and bands, never prices, and a position the account
+                  does not hold has no price anywhere in these files. A row left blank still
+                  imports — it arrives without a price, and the table asks for one before it will
+                  offer a trade on it.
+                </p>
+              )}
+
+              {issues.needsCash && (
+                <label className="mb-5 block max-w-xs">
+                  <span className="field-label mb-1.5">Opening cash balance</span>
+                  <NumInput
+                    className={`field text-right ${
+                      (resolution.cash ?? 0) > 0 ? '' : 'border-warn text-warn'
+                    }`}
+                    step="0.01"
+                    value={resolution.cash ?? 0}
+                    onCommit={(v) => setResolution((r) => ({ ...r, cash: v }))}
+                  />
+                  <span className="sub">
+                    {parsed.holdings
+                      ? 'This account’s file has no Cash and Equiv row.'
+                      : 'No holdings file was loaded, so the balance is yours to set.'}
+                  </span>
+                </label>
+              )}
+
+              {needPrice.length > 0 && (
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {needPrice.map((sym) => {
+                    const price = resolution.prices?.[sym] ?? 0;
+                    return (
+                      <label
+                        key={sym}
+                        className="flex items-center gap-2.5 rounded-lg border border-line px-3 py-2"
+                      >
+                        <span className="w-16 shrink-0 truncate font-sans text-[13.5px] font-bold">
+                          {sym}
+                        </span>
+                        <span className="text-[12.5px] text-ink-soft">$</span>
+                        <NumInput
+                          className={`field text-right ${price > 0 ? '' : 'border-warn'}`}
+                          step="0.01"
+                          value={price}
+                          onCommit={(v) => setPrice(sym, v)}
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </section>
           )}
 

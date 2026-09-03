@@ -278,7 +278,15 @@ export function parseSheets(sheets: SheetGrid[], into?: ParsedImport): ParsedImp
     for (const sheet of sheets) {
       // Holdings are tried first: that sheet has a Quantity column, which a model never does.
       const holdings = readHoldingsSheet(sheet, result.warnings);
-      if (holdings && holdings.positions.length > 0) {
+      /*
+       * A cash balance is enough to make this a holdings sheet.
+       *
+       * A new account that has been funded but not yet invested has a Cash and Equiv row and no
+       * positions at all. Requiring a position here dropped that sheet — and the balance on it —
+       * and did so silently, because the parse above had already succeeded and set `cashFound`.
+       * Opening an account is ordinary work, so an empty one has to survive the read.
+       */
+      if (holdings && (holdings.positions.length > 0 || holdings.cashFound)) {
         if (result.holdings) {
           result.warnings.push(
             `More than one holdings sheet was found. "${sheet.name}" was used; this tool covers one account at a time.`,

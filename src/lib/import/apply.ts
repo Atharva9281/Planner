@@ -6,14 +6,14 @@ import { ParsedImport, ParsedModel, Resolution } from './types';
 /**
  * Builds a portfolio from an import and the decisions the advisor made in the preview.
  *
- * Nothing is invented here. Prices are market data and come from the holdings file alone — the
- * model export carries targets and bands, never a price. A model position the account does not
- * hold therefore arrives at zero shares and no price, which the table shows as needing one
- * rather than quietly dropping the row.
+ * Nothing is invented here. Prices are market data: they come from the holdings file when the
+ * account holds the position, and otherwise from the advisor, who typed them in the preview.
+ * A row with neither still arrives at zero and the table shows it as needing a price, rather
+ * than the row being quietly dropped or given a made-up figure.
  *
- * Cash is the Cash and Equiv row's quantity, options never made it past the parser, and the
- * asset class decides what may be traded. So the only decision left here is whether to keep the
- * holdings the model has no row for.
+ * The same applies to cash. The Cash and Equiv row supplies it whenever the file has one; an
+ * account being opened has no such file, so the balance the advisor entered is used instead.
+ * Options never made it past the parser and the asset class decides what may be traded.
  */
 export function applyImport(parsed: ParsedImport, resolution: Resolution): ExplorerState {
   const model = pickModel(parsed, resolution.modelName);
@@ -27,8 +27,10 @@ export function applyImport(parsed: ParsedImport, resolution: Resolution): Explo
     id: `s${seq++}`,
     sym: row.sym,
     type: row.type,
-    // The holdings file prices what the account owns; nothing else has a price to give.
-    price: priceOf.get(row.sym) ?? 0,
+    /* The holdings file prices what the account owns. For everything else — every row of a model
+       loaded against an account that holds nothing yet — the price is the one the advisor typed
+       in the preview. The file always wins where it has an answer. */
+    price: priceOf.get(row.sym) ?? resolution.prices?.[row.sym] ?? 0,
     target: row.target,
     bandMin: row.bandMin,
     bandMax: row.bandMax,
@@ -52,7 +54,10 @@ export function applyImport(parsed: ParsedImport, resolution: Resolution): Explo
         }))
       : [];
 
-  const cash = holdings?.cash ?? 0;
+  /* A Cash and Equiv row is the balance whenever there is one. Without it the account has no
+     balance on file — a new account, or the one export that omits the row — and the figure the
+     advisor entered in the preview stands in its place. */
+  const cash = holdings?.cashFound ? holdings.cash : (resolution.cash ?? 0);
 
   const portfolio: Portfolio = {
     stocks,
@@ -79,14 +84,24 @@ export function pickModel(parsed: ParsedImport, name?: string): ParsedModel | un
   return parsed.models.find((m) => m.name === name) ?? parsed.models[0];
 }
 
-/** Everything the preview needs to warn about before the advisor commits. */
+/**
+ * Everything the preview needs to warn about before the advisor commits.
+ *
+ * `unpriced` counts down as prices are typed, so it is both the list of fields to show and the
+ * number still outstanding. `needsCash` is true for an account whose files carry no balance at
+ * all, which is every account being opened rather than reviewed.
+ */
 export function importIssues(parsed: ParsedImport, resolution: Resolution) {
   const model = pickModel(parsed, resolution.modelName);
-  if (!model) return { unpriced: [], noBand: [], invalidBand: [] };
+  const needsCash = !parsed.holdings?.cashFound;
+  if (!model) return { unpriced: [], noBand: [], invalidBand: [], needsCash };
 
   return {
-    unpriced: unpricedSymbols(model, parsed.holdings),
+    unpriced: unpricedSymbols(model, parsed.holdings).filter(
+      (sym) => !((resolution.prices?.[sym] ?? 0) > 0),
+    ),
     noBand: model.rows.filter((r) => r.bandMin === r.bandMax).map((r) => r.sym),
     invalidBand: model.rows.filter((r) => r.bandMin > r.bandMax).map((r) => r.sym),
+    needsCash,
   };
 }

@@ -54,12 +54,21 @@ export interface ParsedImport {
 /**
  * The decisions the files themselves cannot settle.
  *
- * There is only one left. Cash comes from the Cash and Equiv row, options are dropped outright,
- * prices come from the holdings file, and the lot rule follows the asset class — none of which
- * the advisor has to arbitrate any more.
+ * Options are dropped outright and the lot rule follows the asset class, so neither is asked
+ * about. What remains is everything the two exports genuinely cannot supply: a price for a
+ * position the account does not hold, and a balance for an account whose file carries none.
+ * Both are unavoidable when the advisor is opening a new account, where the model describes
+ * what to buy and the holdings file has nothing to price it with.
  */
 export interface Resolution {
   modelName?: string;
   /** Held symbols outside the model: keep as an off-model holding, or drop. */
   keepOffModel: boolean;
+  /**
+   * Prices typed in the preview, by symbol, for model rows the holdings file cannot price.
+   * Never consulted for a held position: market data in the file always wins over a typed figure.
+   */
+  prices?: Record<string, number>;
+  /** Opening cash typed in the preview, used only when the files carry no Cash and Equiv row. */
+  cash?: number;
 }

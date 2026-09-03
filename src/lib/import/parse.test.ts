@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { likelyFunds, num, offModelSymbols, parseSheets, unpricedSymbols } from './parse';
 import { applyImport, importIssues } from './apply';
 import { Resolution, SheetGrid } from './types';
-import { lotAwareTarget, totalValue } from '../engine';
+import { lotAwareTarget, mandatoryStatus, needsDecision, planBuy, totalValue } from '../engine';
 
 /* ------------------------------------------------------------------ */
 /* fixtures, transcribed from the real exports                         */
@@ -371,6 +371,117 @@ describe('applying the import', () => {
 
     // While a stock alongside it still rounds to a lot.
     expect(state.portfolio.stocks.find((s) => s.sym === 'AMAT')!.lotRounding).toBe(true);
+  });
+});
+
+describe('an account being opened, with a balance and nothing held', () => {
+  /** The same custodian layout, funded but not yet invested: a cash row and no positions. */
+  const cashOnlySheet = (): SheetGrid => ({
+    name: 'Sheet1',
+    rows: [
+      ['Account Name', 'New Client'],
+      ['Account Number', 'ZZ999999'],
+      [
+        'Location',
+        'Symbol / CUSIP / ID',
+        'Description / Fund',
+        'Asset Class',
+        'Quantity',
+        'Price / NAV',
+        'Market Value',
+        'Percent of Account Holdings',
+      ],
+      ['LPL', '9999136', 'Deposit Cash Account', 'Cash and Equiv', 500000, 1, 500000, 1],
+    ],
+  });
+
+  it('reads the sheet as holdings and keeps the balance, though it lists no positions', () => {
+    const p = parseSheets([modelSheet(), cashOnlySheet()]);
+
+    // The gate here used to be "has at least one position", which dropped the sheet and the
+    // half-million on it without a word.
+    expect(p.sheets.find((s) => s.name === 'Sheet1')?.read).toBe('holdings');
+    expect(p.holdings?.cash).toBe(500000);
+    expect(p.holdings?.cashFound).toBe(true);
+    expect(p.holdings?.positions).toHaveLength(0);
+    expect(p.holdings?.accountName).toBe('New Client');
+  });
+
+  it('imports every model row at zero shares, waiting to be bought', () => {
+    const state = applyImport(parseSheets([modelSheet(), cashOnlySheet()]), baseResolution());
+
+    expect(state.portfolio.cash).toBe(500000);
+    expect(state.portfolio.stocks).toHaveLength(7);
+    expect(state.portfolio.stocks.every((s) => s.shares === 0)).toBe(true);
+    // The model's own cash row still sets the band, exactly as on a funded account.
+    expect(state.portfolio.cashTarget).toBe(7);
+  });
+
+  it('prices those rows from the preview, since no file can price them', () => {
+    const parsed = parseSheets([modelSheet(), cashOnlySheet()]);
+
+    // Nothing is held, so every model row needs a price and the preview asks for all of them.
+    expect(importIssues(parsed, baseResolution()).unpriced).toHaveLength(7);
+
+    const typed = baseResolution({ prices: { AAPL: 298.6, QQQ: 717.54 } });
+    const state = applyImport(parsed, typed);
+
+    expect(state.portfolio.stocks.find((s) => s.sym === 'AAPL')!.price).toBe(298.6);
+    expect(state.portfolio.stocks.find((s) => s.sym === 'QQQ')!.price).toBe(717.54);
+    // Untouched rows still arrive without one rather than with a guess.
+    expect(state.portfolio.stocks.find((s) => s.sym === 'AMAT')!.price).toBe(0);
+    expect(importIssues(parsed, typed).unpriced).toHaveLength(5);
+  });
+
+  it('never lets a typed price override the holdings file', () => {
+    // AMAT is held at 432.16. A stale figure typed in the preview must not displace it.
+    const state = applyImport(
+      parseSheets([modelSheet(), holdingsSheet()]),
+      baseResolution({ prices: { AMAT: 1 } }),
+    );
+
+    expect(state.portfolio.stocks.find((s) => s.sym === 'AMAT')!.price).toBe(432.16);
+  });
+
+  it('takes the opening balance from the advisor when no file carries one', () => {
+    // The model alone: no holdings export at all, the way a new account usually arrives.
+    const parsed = parseSheets([modelSheet()]);
+    expect(importIssues(parsed, baseResolution()).needsCash).toBe(true);
+
+    const state = applyImport(parsed, baseResolution({ cash: 250000 }));
+    expect(state.portfolio.cash).toBe(250000);
+    expect(state.portfolio.stocks).toHaveLength(7);
+  });
+
+  it('does not let a typed balance override a Cash and Equiv row', () => {
+    const state = applyImport(
+      parseSheets([modelSheet(), holdingsSheet()]),
+      baseResolution({ cash: 999 }),
+    );
+
+    expect(state.portfolio.cash).toBe(140328.86);
+    expect(importIssues(parseSheets([modelSheet(), holdingsSheet()]), baseResolution()).needsCash).toBe(
+      false,
+    );
+  });
+
+  it('offers a real trade on every row once it is priced', () => {
+    const parsed = parseSheets([modelSheet(), cashOnlySheet()]);
+    const prices = { AAPL: 298.6, AMAT: 432.16, HWM: 256.55, QQQ: 717.54, SNDK: 40, MGSMX: 10, PDSZX: 10 };
+    const state = applyImport(parsed, baseResolution({ prices }));
+
+    const qqq = state.portfolio.stocks.find((s) => s.sym === 'QQQ')!;
+
+    // Holding nothing against a 12% target is below the 10% floor, so the row is mandatory,
+    // and the lot-aware target is a buy the table can actually offer.
+    expect(mandatoryStatus(state.portfolio, qqq)).toBe('under');
+    expect(needsDecision(state.portfolio, qqq)).toBe(true);
+
+    const plan = planBuy(state.portfolio, qqq, 'target')!;
+    expect(plan).not.toBeNull();
+    expect(plan.action).toBe('BUY');
+    expect(plan.shares).toBeGreaterThan(0);
+    expect(plan.resultShares).toBe(lotAwareTarget(state.portfolio, qqq).goal);
   });
 });
 
