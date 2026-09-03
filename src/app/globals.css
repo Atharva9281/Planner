@@ -32,6 +32,19 @@
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /*
+   * The one breakpoint this app has, and the width the nine-column table stops fitting at.
+   *
+   * Measured, not guessed: the nine columns need about 1290px of content box, which a 1366px
+   * window still gives and a 1280px one does not. 1440 leaves the wide layout a margin rather
+   * than putting it flush against the window edge, and it keeps every Mac laptop — 1470 on a
+   * 13" Air, 1512 on a 14"/16" Pro — on the full table.
+   *
+   * Below it the three raw-room columns fold into a strip beneath each open row. That is what
+   * makes 1280 work, which is what a 1920px Windows laptop at 150% display scaling actually is.
+   */
+  --breakpoint-wide: 1440px;
 }
 
 @layer base {
@@ -108,6 +121,17 @@
 
   .sub {
     @apply mt-1 block font-mono text-[12px] leading-snug text-ink-soft;
+  }
+
+  /*
+   * Below `wide` the raw-room columns leave the header and reappear as a strip under the row they
+   * belong to. The row and its strip are one record, so the rule between them is dropped and only
+   * the strip carries a bottom border — otherwise every position reads as two.
+   */
+  @media (width < 1440px) {
+    .row-with-strip > .td {
+      border-bottom: 0;
+    }
   }
 
   .badge {

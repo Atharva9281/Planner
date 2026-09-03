@@ -72,7 +72,10 @@ export default function Explorer({ slot }: { slot: Slot }) {
     const observer = new IntersectionObserver(([entry]) => setStuck(!entry.isIntersecting));
     observer.observe(el);
     return () => observer.disconnect();
-  }, [isEmpty]);
+    /* `hydrated` belongs here as much as `isEmpty` does: the sentinel is not in the DOM until
+       hydration finishes, so an effect that runs only on mount finds nothing to observe and the
+       compact bar never appears. Both flags gate whether the marker exists to watch. */
+  }, [isEmpty, hydrated]);
 
   /**
    * Stocks a per-row reset would actually change: either they carry trades on the log, or their
@@ -135,7 +138,9 @@ export default function Explorer({ slot }: { slot: Slot }) {
   return (
     <div className="mx-auto max-w-[100rem] px-5 py-6 sm:px-7">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-5">
-        <div className="min-w-[18rem] flex-1">
+        {/* Wide enough to hold the title on one line at 1280, so the button group beside it wraps
+            onto a line of its own rather than breaking the heading in half. */}
+        <div className="min-w-[27rem] flex-1">
           {/* The title is the way home. Browser Back does the same thing, and both are safe:
               the workspace lives above the routes, so leaving this page does not empty it. */}
           <Link href="/" className="inline-block">
@@ -167,6 +172,10 @@ export default function Explorer({ slot }: { slot: Slot }) {
           )}
         </div>
 
+        {/* Every action that belongs to the whole workspace rather than to one position, in one
+            group. The compact bar has always carried these four together; the page header now
+            matches it, and moving the two Edit buttons up here is what frees the row below for
+            the tiles, which could not fit five figures and two buttons on one line. */}
         {!isEmpty && (
           <div className="flex flex-wrap gap-2">
             <button
@@ -183,6 +192,19 @@ export default function Explorer({ slot }: { slot: Slot }) {
             >
               Reset everything to starting state
             </button>
+            <button className="btn-outline" onClick={() => setOpenModal('holdings')}>
+              Edit starting holdings
+            </button>
+            <button className="btn-outline" onClick={() => setOpenModal('model')}>
+              Edit model &amp; cash band
+            </button>
+            {/* Not a way back — Back does that. This throws the account away so different files
+                can be loaded, which no navigation does. */}
+            {slot === 'portfolio' && (
+              <button className="btn-outline" onClick={() => setState(clearAll)}>
+                Load different files
+              </button>
+            )}
           </div>
         )}
       </header>
@@ -199,25 +221,8 @@ export default function Explorer({ slot }: { slot: Slot }) {
         />
       ) : (
         <>
-          <div className="mb-5 flex flex-wrap items-stretch gap-3">
-            <div className="min-w-[22rem] flex-1">
-              <CashStatus portfolio={portfolio} />
-            </div>
-            <div className="flex flex-wrap content-center gap-2">
-              <button className="btn-outline" onClick={() => setOpenModal('holdings')}>
-                Edit starting holdings
-              </button>
-              <button className="btn-outline" onClick={() => setOpenModal('model')}>
-                Edit model &amp; cash band
-              </button>
-              {/* Not a way back — Back does that. This throws the account away so different
-                  files can be loaded, which no navigation does. */}
-              {slot === 'portfolio' && (
-                <button className="btn-outline" onClick={() => setState(clearAll)}>
-                  Load different files
-                </button>
-              )}
-            </div>
+          <div className="mb-5">
+            <CashStatus portfolio={portfolio} />
           </div>
 
           {/* The last thing above the tables. The moment it leaves the top of the window, the

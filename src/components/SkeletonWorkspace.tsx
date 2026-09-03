@@ -14,16 +14,27 @@ import { ParsedImport } from '@/lib/import/types';
  */
 
 const GHOST_ROWS = 7;
-const COLUMNS = [
-  'Stock · target',
-  'Toward the floor',
-  'Holding now',
-  'Toward the ceiling',
-  'Lot-aware target',
-  'What if I held…',
+
+/*
+ * The real table's nine columns, in its order, with the three that fold below `wide` marked so
+ * the ghost folds with them. This list and the tiles below have to track LotAwareTable and
+ * CashStatus exactly: the whole point of the skeleton is that nothing moves when the files land,
+ * and a ghost that shows six columns where the real table shows nine breaks it at the one moment
+ * anybody is watching.
+ */
+const COLUMNS: { label: string; raw?: true }[] = [
+  { label: 'Stock · target' },
+  { label: 'Toward the floor' },
+  { label: 'Holding now' },
+  { label: 'Toward the ceiling' },
+  { label: 'Lot-aware target' },
+  { label: 'Room to the ceiling', raw: true },
+  { label: 'Shares cash affords', raw: true },
+  { label: 'Room to the floor', raw: true },
+  { label: 'What if I held…' },
 ];
 
-const TILES = ['Total account', 'Cash', 'Ceiling', 'Floor'];
+const TILES = ['Total account', 'Cash', 'Target', 'Ceiling', 'Floor'];
 
 /** A dimmed bar standing in for a value that has not arrived yet. */
 function Bar({ w }: { w: string }) {
@@ -39,12 +50,14 @@ export default function SkeletonWorkspace({
 }) {
   return (
     <>
-      {/* ---- the tiles, empty ---- */}
-      <div className="mb-4 flex flex-wrap gap-3" aria-hidden>
+      {/* ---- the tiles, empty. Same grid as CashStatus, cash spanning two tracks ---- */}
+      <div className="mb-4 grid grid-cols-3 gap-3 wide:grid-cols-6" aria-hidden>
         {TILES.map((label) => (
           <div
             key={label}
-            className="min-w-[9rem] flex-1 rounded-xl border border-line bg-panel px-5 py-4"
+            className={`rounded-xl border border-line bg-panel px-5 py-4 ${
+              label === 'Cash' ? 'col-span-2' : ''
+            }`}
           >
             <div className="font-mono text-[22px] font-semibold leading-none text-line">—</div>
             <div className="mt-1.5 text-[11.5px] font-semibold uppercase tracking-[0.04em] text-ink-faint">
@@ -57,7 +70,7 @@ export default function SkeletonWorkspace({
       {/* ---- the table, drawn but empty, with the upload panel inside it ---- */}
       <section className="panel overflow-hidden">
         <div className="px-4 pt-4 pb-3">
-          <h2 className="panel-title">Lot-aware view, target % shown for every row</h2>
+          <h2 className="panel-title">Every position, lot-aware and raw, in one row</h2>
         </div>
 
         <div className="relative">
@@ -67,12 +80,12 @@ export default function SkeletonWorkspace({
                 <tr>
                   {COLUMNS.map((c, i) => (
                     <th
-                      key={c}
+                      key={c.label}
                       className={`th ${i === 0 ? 'th-lead' : ''} ${
                         i === COLUMNS.length - 1 ? 'rounded-tr-lg' : ''
-                      }`}
+                      } ${c.raw ? 'hidden wide:table-cell' : ''}`}
                     >
-                      {c}
+                      {c.label}
                     </th>
                   ))}
                 </tr>
@@ -81,7 +94,10 @@ export default function SkeletonWorkspace({
                 {Array.from({ length: GHOST_ROWS }).map((_, r) => (
                   <tr key={r} className={r % 2 ? 'bg-panel-alt' : 'bg-panel'}>
                     {COLUMNS.map((c) => (
-                      <td key={c} className="td">
+                      <td
+                        key={c.label}
+                        className={`td ${c.raw ? 'hidden wide:table-cell' : ''}`}
+                      >
                         <div className="flex flex-col gap-2">
                           <Bar w="58%" />
                           <Bar w="38%" />
