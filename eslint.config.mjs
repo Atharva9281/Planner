@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // What `netlify build` leaves behind: the compiled server handler and edge functions, which
+    // are this app's own code already bundled. Linting them reports thousands of problems in
+    // generated output and buries anything real.
+    ".netlify/**",
   ]),
 ]);
 
