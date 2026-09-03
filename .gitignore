@@ -41,3 +41,8 @@ yarn-error.log*
 next-env.d.ts
 
 /docs
+# Local Netlify folder
+.netlify
+
+# Written by Netlify's edge-function bundler, which runs on Deno. A build artefact, not source.
+deno.lock

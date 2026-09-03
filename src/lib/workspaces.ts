@@ -27,6 +27,20 @@ export interface Workspaces {
 /** Bumped whenever ExplorerState changes shape, so a stale tab cannot restore into a new app. */
 const STORAGE_KEY = 'cash-deployment-explorer:v1';
 
+/*
+ * localStorage, not sessionStorage.
+ *
+ * Once this is installed as a desktop app, closing the window is how people put work down for the
+ * hour, not how they discard it — and sessionStorage dies with the window, taking the loaded
+ * account and every trade on the log with it. The two files that built the account cannot be read
+ * back automatically, so that loss is unrecoverable.
+ *
+ * The trade is that a client's holdings now sit in this browser profile until they are cleared.
+ * "Load different files" is the way out: it replaces the workspace with an empty one, and the
+ * write below persists that emptiness immediately.
+ */
+const store = () => window.localStorage;
+
 const fresh = (): Workspaces => ({ example: sampleState(), portfolio: emptyState() });
 
 /*
@@ -50,7 +64,7 @@ function subscribe(listener: () => void) {
    rather than in an effect keeps the restore out of React's render cycle entirely. */
 if (typeof window !== 'undefined') {
   try {
-    const saved = window.sessionStorage.getItem(STORAGE_KEY);
+    const saved = store().getItem(STORAGE_KEY);
     snapshot = saved ? (JSON.parse(saved) as Workspaces) : fresh();
   } catch {
     // A private window, a cleared store, or something written by an older shape of the app.
@@ -60,9 +74,9 @@ if (typeof window !== 'undefined') {
 
 function save() {
   try {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    store().setItem(STORAGE_KEY, JSON.stringify(snapshot));
   } catch {
-    // Out of quota, or storage blocked. The session keeps working; only the refresh net is lost.
+    // Out of quota, or storage blocked. The session keeps working; only the restore is lost.
   }
 }
 

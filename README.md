@@ -42,9 +42,57 @@ mandate; a tidy share count never justifies breaking it.
 ```bash
 npm install
 npm run dev     # http://localhost:3000
-npm test        # 105 tests
+npm test        # 112 tests
 npm run build
 ```
+
+## Installing it as a desktop app
+
+Hosted, then installed. In Chrome or Edge the address bar shows an install icon; in Safari it is
+File → Add to Dock. Either one puts a real icon in the Dock or Start menu that opens in its own
+window with no address bar. It is still the hosted site underneath, so a fix pushed here reaches
+an installed copy the next time it is opened — there is nothing to download again.
+
+A loaded portfolio is kept in the browser's local storage, so closing the window and reopening it
+later returns to the same account and the same trade log. **Load different files** is how you
+clear it.
+
+## Deploying it
+
+Netlify. The site is **not** a plain static upload: `src/proxy.ts` runs the password check on the
+server before any page renders, so the host has to support Next.js server rendering. Netlify's
+Next runtime turns that file into an edge function and the rest into a server handler — verified
+locally with `netlify build`, including the routing rules that keep the icons and manifest open.
+
+```bash
+npx netlify-cli deploy --build --prod
+```
+
+Then set `APP_PASSWORD` once, under Site configuration → Environment variables. Nothing else is
+configured; `netlify.toml` only pins the build command and the Node version.
+
+Cloudflare Workers is the other free option and hosts this fine, but its Next.js integration takes
+more setting up. Vercel's free tier is the one to avoid here — it forbids commercial use.
+
+## The password
+
+Set `APP_PASSWORD` in the host's environment and every route sits behind an unlock screen. Leave
+it unset — as it is locally — and there is no gate at all, which is why `npm run dev` and the
+tests need no login.
+
+```bash
+APP_PASSWORD='something-long' npm start
+```
+
+It is one shared password, not accounts: everyone who has it gets in, and there is no record of
+who. Changing it is one field on the host. Note that nothing is shared between the people who use
+it — the app keeps no server-side state, so each person's portfolios and trade logs live only in
+their own browser.
+
+The check runs in `src/proxy.ts`, on the server, before any page renders. The cookie it sets holds
+a hash of the password rather than the password. None of this protects account data, because no
+account data ever reaches a server: both exports are parsed in the browser and stay there. It
+keeps the tool private, not the holdings.
 
 Three routes: `/` to choose, `/example` for a worked example with invented figures, and
 `/portfolio` for a real account. The two are independent workspaces held per browser tab, so
@@ -58,6 +106,8 @@ src/lib/actions.ts       state transitions, each returning a new state
 src/lib/import/          reading the two .xlsx exports
 src/lib/xlsx/            writing the trade log back out as a workbook
 src/components/          the table, the panels, the modals
+src/proxy.ts             the password gate, ahead of every route
+src/app/manifest.ts      what makes it installable as a desktop app
 ```
 
 `src/lib/engine.ts` is the place to start. Everything visible is derived from it.

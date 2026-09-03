@@ -1,0 +1,14 @@
+# Netlify picks up the Next.js runtime automatically when it sees Next in package.json, so this
+# file only pins the things worth being explicit about.
+#
+# The site is not a plain static upload: `src/proxy.ts` runs the password check on the server
+# before any page renders, and `/api/unlock` sets the cookie. A host without Next.js server
+# support would serve the pages and skip the gate entirely.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # Match the local toolchain rather than whatever the build image defaults to.
+  NODE_VERSION = "22"
