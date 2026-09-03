@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Slot, setWorkspace, useHydrated, useWorkspaces } from '@/lib/workspaces';
 import CashStatus from '@/components/CashStatus';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import Panel from '@/components/Panel';
 import { CollapseAll } from '@/components/RowToggle';
 import StuckHeader from '@/components/StuckHeader';
@@ -31,6 +32,7 @@ import {
   undoLast,
 } from '@/lib/actions';
 import { ParsedImport } from '@/lib/import/types';
+import { priceAge } from '@/lib/format';
 import { needsDecision, planBuy, planSell, planToShares } from '@/lib/engine';
 import { BuyMode, ExplorerState, SellMode } from '@/lib/types';
 import { useRowCollapse } from '@/lib/useRowCollapse';
@@ -54,9 +56,21 @@ export default function Explorer({ slot }: { slot: Slot }) {
   const [openModal, setOpenModal] = useState<OpenModal>(null);
   /** A parse started from the landing page, handed to the review dialog when it opens. */
   const [pendingImport, setPendingImport] = useState<ParsedImport | null>(null);
+  /** A pending discard, held until the advisor confirms it. Null when nothing is being asked. */
+  const [confirming, setConfirming] = useState<null | 'clear'>(null);
 
   const { portfolio, baseline, log } = state;
   const isEmpty = portfolio.stocks.length === 0 && portfolio.offModel.length === 0;
+
+  /* How old the loaded prices are. Recomputed each render rather than memoised: the answer
+     depends on the clock, not only on the state. */
+  const age = priceAge(state.source?.loadedAt);
+
+  /** What a discard would actually cost, in the words the confirmation uses. */
+  const atRisk = [
+    log.length > 0 && `${log.length} trade${log.length === 1 ? '' : 's'} on the log`,
+    !isEmpty && `the loaded account${state.source?.label ? ` (${state.source.label})` : ''}`,
+  ].filter(Boolean) as string[];
 
   /* Watching a one-pixel marker beats reading scrollY: it needs no threshold to tune, and it
      stays correct when the header above it changes height. */
@@ -168,6 +182,21 @@ export default function Explorer({ slot }: { slot: Slot }) {
               {state.source?.kind === 'sample' && (
                 <span className="text-[13.5px] text-warn">sample numbers, not a real account</span>
               )}
+
+              {/* When these prices were exported, next to whose account they are. Every figure on
+                  the page comes from a price, and a workspace that survives the window can be any
+                  age by the time it is looked at again. */}
+              {age && (
+                <span
+                  className={`text-[13.5px] ${
+                    age.stale ? 'font-semibold text-warn' : 'text-ink-soft'
+                  }`}
+                >
+                  {age.label}
+                  {age.stale &&
+                    ` · prices are ${age.days} day${age.days === 1 ? '' : 's'} old`}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -201,7 +230,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
             {/* Not a way back — Back does that. This throws the account away so different files
                 can be loaded, which no navigation does. */}
             {slot === 'portfolio' && (
-              <button className="btn-outline" onClick={() => setState(clearAll)}>
+              <button className="btn-outline" onClick={() => setConfirming('clear')}>
                 Load different files
               </button>
             )}
@@ -317,6 +346,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
       {openModal === 'import' && (
         <ImportDialog
           initial={pendingImport ?? undefined}
+          replaces={atRisk.length > 0 ? atRisk.join(' and ') : null}
           onClose={closeImport}
           onApply={(next) => {
             setState(next);
@@ -334,8 +364,32 @@ export default function Explorer({ slot }: { slot: Slot }) {
           onRemoveStock={(id) => setState((cur) => removeStock(cur, id))}
           onCashBand={(field, value) => setState((cur) => setCashBand(cur, field, value))}
           onClearAll={() => {
-            setState(clearAll);
             setOpenModal(null);
+            setConfirming('clear');
+          }}
+        />
+      )}
+
+      {/* Both routes to an empty workspace land here first. */}
+      {confirming === 'clear' && (
+        <ConfirmDialog
+          title="Discard this portfolio?"
+          confirmLabel="Discard and start over"
+          body={
+            <>
+              <p>
+                This clears {atRisk.join(' and ')}, and returns to the upload screen.
+              </p>
+              <p className="mt-3 text-ink-soft">
+                The two exports cannot be read back automatically, so anything decided here would
+                have to be worked through again. Download the trade log first if you need it.
+              </p>
+            </>
+          }
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            setConfirming(null);
+            setState(clearAll);
           }}
         />
       )}

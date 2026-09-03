@@ -74,6 +74,9 @@ export function applyImport(parsed: ParsedImport, resolution: Resolution): Explo
     source: {
       kind: 'import',
       label: holdings?.accountName || model?.name || 'Imported portfolio',
+      /* Stamped here rather than at render, because this is the moment the prices entered the
+         app. Everything downstream is derived from them, so this is their age too. */
+      loadedAt: new Date().toISOString(),
     },
     log: [],
     nextId: seq,

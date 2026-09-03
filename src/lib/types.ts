@@ -119,9 +119,17 @@ export interface Baseline {
 export interface ExplorerState {
   portfolio: Portfolio;
   baseline: Baseline;
-  /** What is loaded — an account name from an import, or the worked example. Shown in the header
-   *  so sample numbers are never mistaken for an account. */
-  source?: { kind: 'sample' | 'import' | 'manual'; label: string };
+  /**
+   * What is loaded — an account name from an import, or the worked example. Shown in the header
+   * so sample numbers are never mistaken for an account.
+   *
+   * `loadedAt` is when the files were read, as an ISO string so it survives being written to
+   * storage and parsed back. It exists because the workspace now outlives the window: every
+   * figure in the app derives from a price, those prices are frozen at the moment of export, and
+   * without a date on screen a portfolio restored on Friday is indistinguishable from one loaded
+   * this morning. Absent on the worked example, whose prices were never real.
+   */
+  source?: { kind: 'sample' | 'import' | 'manual'; label: string; loadedAt?: string };
   log: LogEntry[];
   /** Monotonic counter behind every generated id, so ids are deterministic and SSR-safe. */
   nextId: number;
