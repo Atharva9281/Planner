@@ -167,6 +167,23 @@ export function needsDecision(p: Portfolio, s: Stock): boolean {
   return lotAwareTarget(p, s).goal !== s.shares;
 }
 
+/**
+ * Positions the tool cannot value, and therefore cannot honestly report on.
+ *
+ * This is worse than a missing figure on one row. Total account value is the denominator of every
+ * weight and every band in dollars, and an unpriced holding contributes nothing to it — so the
+ * total is understated and *every other position's* weight is overstated to match. One row
+ * without a price quietly moves every number on the page, in a direction nothing on screen
+ * explains.
+ *
+ * That is why the trade log will not export while this is non-empty: a spreadsheet leaves the
+ * building and outlives the session that produced it, and it would carry percentages that are
+ * wrong without saying so.
+ */
+export function unpricedPositions(p: Portfolio): Stock[] {
+  return p.stocks.filter((s) => s.price <= 0);
+}
+
 export type CashStatus = 'above' | 'below' | 'ok';
 
 export function cashStatus(p: Portfolio): CashStatus {

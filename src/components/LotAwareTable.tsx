@@ -247,21 +247,34 @@ export default function LotAwareTable({
             const stripe = i % 2 ? 'bg-panel-alt' : 'bg-panel';
 
             /* Without a price there is no weight, no band in shares and no trade. Saying so
-               beats rendering a row of zeroes that reads as a real position sitting at 0%. */
+               beats rendering a row of zeroes that reads as a real position sitting at 0%.
+
+               Red rather than amber, and the whole row rather than the one cell that is empty,
+               because the consequence is not confined to this row: an unpriced holding adds
+               nothing to total account value, so every other position's weight is overstated
+               while this sits here. It is a fault in the page, not a gap on a line. */
             if (s.price <= 0) {
               return (
-                <tr key={s.id} className={`${stripe} shadow-[inset_3px_0_0_0_var(--color-warn)]`}>
+                <tr
+                  key={s.id}
+                  className="bg-sell-soft shadow-[inset_4px_0_0_0_var(--color-sell)]"
+                >
                   <td className="td font-sans text-[15px] font-bold">
                     {s.sym}
-                    <span className="sub text-warn">no price</span>
+                    {/* Its own line, sized to its text: inline it collides with a four-letter
+                        ticker, and full width it reads as a banner rather than a label. */}
+                    <span className="badge mt-1.5 block w-fit bg-sell text-white">
+                      NEEDS A PRICE
+                    </span>
                     <span className="sub">
                       {s.target}% &middot; {s.bandMin}&ndash;{s.bandMax}%
                     </span>
                   </td>
                   <td className="td" colSpan={8}>
                     <div className="flex flex-wrap items-center gap-3">
-                      <span className="font-sans text-[13.5px] text-ink-soft">
-                        Set a price to trade this position.
+                      <span className="font-sans text-[13.5px] font-semibold text-sell">
+                        Set a price to trade this position. Until then every weight on the page is
+                        overstated, and the trade log will not export.
                       </span>
                       <label className="flex items-center gap-2">
                         <span className="font-sans text-[12.5px] text-ink-soft">$</span>

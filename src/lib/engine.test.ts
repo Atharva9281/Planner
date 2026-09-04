@@ -16,6 +16,7 @@ import {
   rawMinSell,
   planToShares,
   totalValue,
+  unpricedPositions,
   whatIf,
   weight,
 } from './engine';
@@ -454,5 +455,49 @@ describe('what if I held this many', () => {
   it('has no trade to make when the count is already held', () => {
     const p = samplePortfolio();
     expect(planToShares(p, stockOf(p, 'MSFT'), 600)).toBeNull();
+  });
+});
+
+/**
+ * A position with no price is not a blank cell, it is a wrong page: it contributes nothing to
+ * total account value, so the denominator under every weight is too small and every other
+ * position reads as a larger share of the account than it is. The trade log will not export
+ * while one exists, because a spreadsheet outlives the session that made it.
+ */
+describe('positions the tool cannot value', () => {
+  const priced = (sym: string, price: number, shares: number): Stock => ({
+    id: sym,
+    sym,
+    price,
+    target: 25,
+    bandMin: 20,
+    bandMax: 30,
+    shares,
+  });
+
+  it('finds nothing to complain about when every position has a price', () => {
+    expect(unpricedPositions(samplePortfolio())).toEqual([]);
+  });
+
+  it('names the positions carrying no price', () => {
+    const p = build([priced('AAA', 100, 10), priced('BBB', 0, 0), priced('CCC', 0, 40)], 5000);
+
+    expect(unpricedPositions(p).map((s) => s.sym)).toEqual(['BBB', 'CCC']);
+  });
+
+  /** A negative price is as unusable as none, and a hand-typed field can produce one. */
+  it('treats a nonsense price the same as a missing one', () => {
+    const p = build([priced('AAA', 100, 10), priced('BBB', -5, 10)], 0);
+    expect(unpricedPositions(p).map((s) => s.sym)).toEqual(['BBB']);
+  });
+
+  it('shows why it matters: the unpriced row drags every other weight up', () => {
+    const withPrice = build([priced('AAA', 100, 100), priced('BBB', 100, 100)], 0);
+    const without = build([priced('AAA', 100, 100), priced('BBB', 0, 100)], 0);
+
+    // AAA is genuinely half the account. With BBB unpriced it reports as the whole of it.
+    expect(weight(withPrice, stockOf(withPrice, 'AAA'))).toBeCloseTo(50, 6);
+    expect(weight(without, stockOf(without, 'AAA'))).toBeCloseTo(100, 6);
+    expect(totalValue(without)).toBe(10_000);
   });
 });

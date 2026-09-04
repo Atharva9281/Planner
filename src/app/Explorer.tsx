@@ -33,7 +33,7 @@ import {
 } from '@/lib/actions';
 import { ParsedImport } from '@/lib/import/types';
 import { priceAge } from '@/lib/format';
-import { needsDecision, planBuy, planSell, planToShares } from '@/lib/engine';
+import { needsDecision, planBuy, planSell, planToShares, unpricedPositions } from '@/lib/engine';
 import { BuyMode, ExplorerState, SellMode } from '@/lib/types';
 import { useRowCollapse } from '@/lib/useRowCollapse';
 import { downloadTradeLog } from '@/lib/xlsx/download';
@@ -65,6 +65,10 @@ export default function Explorer({ slot }: { slot: Slot }) {
   /* How old the loaded prices are. Recomputed each render rather than memoised: the answer
      depends on the clock, not only on the state. */
   const age = priceAge(state.source?.loadedAt);
+
+  /** Positions with no price. While any exist, the account total is wrong and so is every weight
+   *  derived from it, which is why the trade log will not export. */
+  const unpriced = unpricedPositions(portfolio);
 
   /** What a discard would actually cost, in the words the confirmation uses. */
   const atRisk = [
@@ -302,13 +306,31 @@ export default function Explorer({ slot }: { slot: Slot }) {
           <Panel
             title="Trade log"
             actions={
-              <button
-                className="btn-outline shrink-0"
-                disabled={log.length === 0}
-                onClick={() => downloadTradeLog(state)}
-              >
-                Download as Excel
-              </button>
+              <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+                {/* A disabled button with no reason beside it reads as a broken button. Say what
+                    is wrong and name the rows, so the fix is one glance away. */}
+                {unpriced.length > 0 && (
+                  <span className="max-w-[28rem] text-right text-[13px] font-semibold text-sell">
+                    {unpriced.length} position{unpriced.length === 1 ? '' : 's'} without a price
+                    {' ('}
+                    {unpriced.map((s) => s.sym).join(', ')}
+                    {'). '}
+                    Every weight here is overstated until they are priced.
+                  </span>
+                )}
+                <button
+                  className="btn-outline shrink-0"
+                  disabled={log.length === 0 || unpriced.length > 0}
+                  title={
+                    unpriced.length > 0
+                      ? 'The export would carry percentages that are wrong, because an unpriced holding is missing from total account value.'
+                      : undefined
+                  }
+                  onClick={() => downloadTradeLog(state)}
+                >
+                  Download as Excel
+                </button>
+              </div>
             }
             summary={
               log.length === 0
