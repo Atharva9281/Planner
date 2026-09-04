@@ -1,100 +1,88 @@
 import { cashPct, totalValue } from '../engine';
-import { LogEntry, Portfolio } from '../types';
+import { Order } from '../orders';
+import { Portfolio } from '../types';
 import { Cell, SheetSpec } from './write';
 
 /**
- * The trade log as a spreadsheet, in the same order and with the same columns as the panel on
- * screen: oldest first, opening balance on top, cash carried down the column.
+ * The orders as a spreadsheet: one row per position that has to move, which is what a trading
+ * desk acts on.
+ *
+ * Not the click history. An advisor arrives at a decision by trying things, and a file that
+ * listed every attempt would read as a list of instructions — including the ones that were
+ * reversed. The steps stay on screen behind a toggle for retracing a session; they are not the
+ * document that leaves the building.
+ *
+ * There is deliberately no running "cash after each row" column. Net orders have no sequence to
+ * execute in, so a running balance would be asserting an order of execution this tool never
+ * decided. The cash position is stated once, underneath, where it belongs.
  *
  * Every figure is written as a number with a format, never as pre-formatted text, so the columns
  * sort and sum in Excel. That is the whole reason for exporting a workbook rather than a picture
  * of one.
  */
 
-export const TRADE_LOG_HEADERS = [
-  '#',
-  'Action',
-  'Symbol',
-  'Shares',
-  'Price',
-  'Amount',
-  'Ends at',
-  'Clean lot',
-  'Cash after',
-  'Cash %',
-  'Note',
-] as const;
+export const ORDER_HEADERS = ['Symbol', 'Action', 'Shares', 'Price', 'Amount', 'Note'] as const;
 
-const COLUMN_WIDTHS = [5, 9, 10, 11, 12, 14, 10, 10, 14, 9, 62];
+const COLUMN_WIDTHS = [12, 9, 11, 13, 15, 48];
 
 const text = (value: string): Cell => ({ value, format: 'text' });
 const num = (value: number): Cell => ({ value, format: 'number' });
 const money = (value: number): Cell => ({ value, format: 'money' });
 const percent = (value: number): Cell => ({ value, format: 'percent' });
+const blank = (): Cell => text('');
 
-/** The band crossings a row should be annotated with, judged against the current band. */
-function noteFor(e: LogEntry, p: Portfolio): string {
-  const parts = [e.label];
-
-  if (e.partial) parts.push('Partial fill: cash ran out before the full amount could be bought.');
-
-  if (e.source === 'model') {
-    if (e.pctBefore > p.cashFloor && e.pctAfter <= p.cashFloor) {
-      parts.push(`Crosses below the ${p.cashFloor}% cash floor in this step.`);
-    }
-    if (e.action === 'SELL' && e.pctBefore <= p.cashCeiling && e.pctAfter > p.cashCeiling) {
-      parts.push(`Crosses above the ${p.cashCeiling}% cash ceiling in this step.`);
-    }
-  }
-
-  return parts.join(' ');
+function noteFor(o: Order): string {
+  if (o.source === 'offModel') return 'Not in the model. Sold entire, proceeds to cash.';
+  return o.shares % 100 === 0 ? 'A clean lot.' : 'Not a round lot.';
 }
 
-export function tradeLogSheet(log: LogEntry[], portfolio: Portfolio): SheetSpec {
-  const rows: Cell[][] = [TRADE_LOG_HEADERS.map((h) => ({ value: h, format: 'header' as const }))];
+export function ordersSheet(
+  orders: Order[],
+  portfolio: Portfolio,
+  cashBefore: number,
+): SheetSpec {
+  const rows: Cell[][] = [ORDER_HEADERS.map((h) => ({ value: h, format: 'header' as const }))];
 
-  // Where cash stood before any of this, so the running column has somewhere to start.
-  if (log.length > 0) {
+  for (const o of orders) {
     rows.push([
-      text(''),
-      text(''),
-      text(''),
-      text(''),
-      text(''),
-      text(''),
-      text(''),
-      text(''),
-      money(log[0].cashBefore),
-      percent(log[0].pctBefore),
-      text('Opening balance'),
+      text(o.sym),
+      text(o.action),
+      num(o.shares),
+      money(o.price),
+      money(o.amount),
+      text(noteFor(o)),
     ]);
   }
 
-  log.forEach((e, i) => {
-    rows.push([
-      num(i + 1),
-      text(e.action),
-      text(e.sym),
-      num(e.shares),
-      money(e.price),
-      money(e.amount),
-      // An off-model holding is sold entire and leaves no position behind, so there is no lot.
-      num(e.source === 'model' ? e.resultShares : 0),
-      text(e.source === 'model' ? (e.resultIsLot ? 'yes' : 'no') : ''),
-      money(e.cashAfter),
-      percent(e.pctAfter),
-      text(noteFor(e, portfolio)),
-    ]);
-  });
+  /* The cash these orders move between, and the account they move inside. Kept on this sheet
+     rather than only on the Account sheet, because the person reading the orders is the person
+     who needs to know whether the cash covers them. */
+  rows.push([blank(), blank(), blank(), blank(), blank(), blank()]);
+  rows.push([text('Cash before'), blank(), blank(), blank(), money(cashBefore), blank()]);
+  rows.push([text('Cash after'), blank(), blank(), blank(), money(portfolio.cash), blank()]);
+  rows.push([
+    text('Total account'),
+    blank(),
+    blank(),
+    blank(),
+    money(totalValue(portfolio)),
+    text(`Cash is ${cashPct(portfolio).toFixed(3)}% of it.`),
+  ]);
 
-  return { name: 'Trade log', columns: COLUMN_WIDTHS, rows };
+  return { name: 'Orders', columns: COLUMN_WIDTHS, rows };
 }
 
 /**
- * Everything the account was measured against while the trades were made. Kept on its own sheet
- * so the log stays a clean table that can be sorted and filtered without a preamble in the way.
+ * Everything the account was measured against while the orders were arrived at. Kept on its own
+ * sheet so the orders stay a clean table that can be sorted and filtered without a preamble in
+ * the way.
  */
-export function contextSheet(portfolio: Portfolio, label: string, exportedAt: Date): SheetSpec {
+export function contextSheet(
+  portfolio: Portfolio,
+  label: string,
+  exportedAt: Date,
+  steps: number,
+): SheetSpec {
   return {
     name: 'Account',
     columns: [26, 20],
@@ -110,11 +98,14 @@ export function contextSheet(portfolio: Portfolio, label: string, exportedAt: Da
       [text('Cash ceiling %'), percent(portfolio.cashCeiling)],
       [text('Model positions'), num(portfolio.stocks.length)],
       [text('Off-model holdings'), num(portfolio.offModel.length)],
+      // How much exploring produced these orders. Not an instruction, but it explains why the
+      // sheet is short when the session was long.
+      [text('Steps taken'), num(steps)],
     ],
   };
 }
 
-/** `trade-log-john-and-jane-doe-2026-08-31.xlsx` */
+/** `orders-john-and-jane-doe-2026-08-31.xlsx` */
 export function tradeLogFilename(label: string, at: Date): string {
   const slug =
     label
@@ -122,5 +113,5 @@ export function tradeLogFilename(label: string, at: Date): string {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 48) || 'portfolio';
-  return `trade-log-${slug}-${at.toISOString().slice(0, 10)}.xlsx`;
+  return `orders-${slug}-${at.toISOString().slice(0, 10)}.xlsx`;
 }

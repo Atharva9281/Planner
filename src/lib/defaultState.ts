@@ -83,11 +83,14 @@ export function samplePortfolio(): Portfolio {
   };
 }
 
-/** Snapshot of the shares and cash a reset should return to. */
+/** Snapshot of the shares, cash and off-model holdings a reset should return to. */
 export function baselineFrom(p: Portfolio) {
   return {
     shares: Object.fromEntries(p.stocks.map((s) => [s.id, s.shares])),
     cash: p.cash,
+    // Copied, not referenced: the live list is filtered when a holding is sold, and a shared
+    // array would take the snapshot with it.
+    offModel: p.offModel.map((h) => ({ ...h })),
   };
 }
 

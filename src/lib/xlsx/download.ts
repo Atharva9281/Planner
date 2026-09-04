@@ -1,7 +1,8 @@
 'use client';
 
-import { contextSheet, tradeLogFilename, tradeLogSheet } from './tradeLog';
+import { contextSheet, ordersSheet, tradeLogFilename } from './tradeLog';
 import { buildXlsx } from './write';
+import { orderSummary } from '../orders';
 import { ExplorerState } from '../types';
 
 const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -14,10 +15,11 @@ const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
  */
 export function downloadTradeLog(state: ExplorerState, now = new Date()): void {
   const label = state.source?.label ?? 'Untitled portfolio';
+  const { orders, cashBefore, steps } = orderSummary(state);
 
   const bytes = buildXlsx([
-    tradeLogSheet(state.log, state.portfolio),
-    contextSheet(state.portfolio, label, now),
+    ordersSheet(orders, state.portfolio, cashBefore),
+    contextSheet(state.portfolio, label, now, steps),
   ]);
 
   // A fresh ArrayBuffer, so the Blob never holds a view into a larger pooled buffer.

@@ -183,6 +183,13 @@ export function resetAll(state: ExplorerState): ExplorerState {
         ...s,
         shares: state.baseline.shares[s.id] ?? 0,
       })),
+      /* Sold off-model holdings come back too. Restoring the cash without them took the sale
+         proceeds away and left nothing in their place, so the account lost that value outright
+         with no trade behind it — a reset is meant to undo work, not destroy it.
+         `?? current` covers a workspace saved before the baseline recorded them. */
+      offModel: state.baseline.offModel
+        ? state.baseline.offModel.map((h) => ({ ...h }))
+        : state.portfolio.offModel,
     },
     log: [],
   };
@@ -274,6 +281,19 @@ export function removeStock(state: ExplorerState, id: string): ExplorerState {
   };
 }
 
+/**
+ * Adding or editing an off-model holding describes the starting position, exactly as editing a
+ * share count does, so it moves the baseline with it.
+ *
+ * Without this the baseline says the account never held the thing, and selling a holding entered
+ * by hand produces no order at all — the cash moves and nothing explains why.
+ */
+const withBaselineOffModel = (state: ExplorerState, offModel: OffModelHolding[]): ExplorerState => ({
+  ...state,
+  portfolio: { ...state.portfolio, offModel },
+  baseline: { ...state.baseline, offModel: offModel.map((h) => ({ ...h })) },
+});
+
 export function addOffModel(state: ExplorerState): ExplorerState {
   const holding: OffModelHolding = {
     id: `o${state.nextId}`,
@@ -282,8 +302,7 @@ export function addOffModel(state: ExplorerState): ExplorerState {
     price: 100,
   };
   return {
-    ...state,
-    portfolio: { ...state.portfolio, offModel: [...state.portfolio.offModel, holding] },
+    ...withBaselineOffModel(state, [...state.portfolio.offModel, holding]),
     nextId: state.nextId + 1,
   };
 }
@@ -294,16 +313,16 @@ export function setOffModelField(
   field: 'sym' | 'shares' | 'price',
   value: string | number,
 ): ExplorerState {
-  return withPortfolio(state, {
-    ...state.portfolio,
-    offModel: state.portfolio.offModel.map((h) =>
+  return withBaselineOffModel(
+    state,
+    state.portfolio.offModel.map((h) =>
       h.id !== id
         ? h
         : field === 'sym'
           ? { ...h, sym: String(value).toUpperCase() }
           : { ...h, [field]: Number(value) || 0 },
     ),
-  });
+  );
 }
 
 /**
@@ -319,10 +338,12 @@ export function removeOffModel(state: ExplorerState, id: string): ExplorerState 
   const holding = state.portfolio.offModel.find((h) => h.id === id);
   if (!holding || offModelValue(holding) !== 0) return state;
 
-  return withPortfolio(state, {
-    ...state.portfolio,
-    offModel: state.portfolio.offModel.filter((h) => h.id !== id),
-  });
+  // Worth nothing, so it leaves the starting position too rather than lingering there as a row a
+  // reset would resurrect.
+  return withBaselineOffModel(
+    state,
+    state.portfolio.offModel.filter((h) => h.id !== id),
+  );
 }
 
 /** Re-snapshots the baseline from the live portfolio. Used after a bulk edit of starting holdings. */

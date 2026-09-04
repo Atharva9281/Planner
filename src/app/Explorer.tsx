@@ -12,7 +12,7 @@ import SkeletonWorkspace from '@/components/SkeletonWorkspace';
 import HoldingsModal from '@/components/HoldingsModal';
 import LotAwareTable from '@/components/LotAwareTable';
 import ModelModal from '@/components/ModelModal';
-import TradeLog from '@/components/TradeLog';
+import Orders from '@/components/Orders';
 import ImportDialog from '@/components/import/ImportDialog';
 import {
   addOffModel,
@@ -32,6 +32,7 @@ import {
   undoLast,
 } from '@/lib/actions';
 import { ParsedImport } from '@/lib/import/types';
+import { netOrders } from '@/lib/orders';
 import { priceAge } from '@/lib/format';
 import { needsDecision, planBuy, planSell, planToShares, unpricedPositions } from '@/lib/engine';
 import { BuyMode, ExplorerState, SellMode } from '@/lib/types';
@@ -67,8 +68,12 @@ export default function Explorer({ slot }: { slot: Slot }) {
   const age = priceAge(state.source?.loadedAt);
 
   /** Positions with no price. While any exist, the account total is wrong and so is every weight
-   *  derived from it, which is why the trade log will not export. */
+   *  derived from it, which is why the orders will not export. */
   const unpriced = unpricedPositions(portfolio);
+
+  /** What actually has to be traded — the diff from the starting position, not the click history.
+   *  Only used for the panel's own headline count; the panel recomputes what it renders. */
+  const orders = netOrders(state);
 
   /** What a discard would actually cost, in the words the confirmation uses. */
   const atRisk = [
@@ -304,7 +309,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
           </div>
 
           <Panel
-            title="Trade log"
+            title="Orders to place"
             actions={
               <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
                 {/* A disabled button with no reason beside it reads as a broken button. Say what
@@ -337,18 +342,19 @@ export default function Explorer({ slot }: { slot: Slot }) {
               </div>
             }
             summary={
-              log.length === 0
-                ? 'no trades yet'
-                : `${log.length} trade${log.length === 1 ? '' : 's'}`
+              orders.length === 0
+                ? 'nothing to trade'
+                : `${orders.length} order${orders.length === 1 ? '' : 's'}`
             }
             description={
               <p className="mt-2 max-w-[64rem] text-[13.5px] leading-relaxed text-ink-soft">
-                Every trade this session, oldest first, with the cash balance carried down the
-                column as each one lands.
+                Where each position ends up against where it started, which is what a trading desk
+                acts on. Trying a position and putting it back leaves nothing here, so exploring
+                the table costs nothing. The steps that got you here are one click away.
               </p>
             }
           >
-            <TradeLog log={log} portfolio={portfolio} />
+            <Orders state={state} />
           </Panel>
         </>
       )}

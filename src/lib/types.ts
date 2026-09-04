@@ -114,6 +114,16 @@ export interface Baseline {
   /** Keyed by stock id. */
   shares: Record<string, number>;
   cash: number;
+  /**
+   * Off-model holdings as they stood at the start, so selling one is undoable by a reset rather
+   * than only by an undo. Without it, resetting put the cash back and left the holding sold: the
+   * account quietly lost that value with no trade behind it.
+   *
+   * Optional only so a workspace stored before this field existed still restores. Read it through
+   * `?? []` — an older saved state has no record of what was there, which is the same position
+   * the app was in before.
+   */
+  offModel?: OffModelHolding[];
 }
 
 export interface ExplorerState {
