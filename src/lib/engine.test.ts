@@ -501,3 +501,46 @@ describe('positions the tool cannot value', () => {
     expect(totalValue(without)).toBe(10_000);
   });
 });
+
+/**
+ * The two faults kept apart. Both block the export; only one moves other positions' numbers, and
+ * the copy on the page claims the stronger one only when it is true.
+ */
+describe('what an unpriced position does to the totals', () => {
+  const row = (sym: string, price: number, shares: number): Stock => ({
+    id: sym,
+    sym,
+    price,
+    target: 25,
+    bandMin: 20,
+    bandMax: 30,
+    shares,
+  });
+
+  it('leaves every total untouched when the position holds nothing', () => {
+    // The common case: a model row the account has not bought. Zero shares are worth zero at
+    // any price, so nothing downstream moves.
+    const unpriced = build([row('MSFT', 412.3, 600), row('AAPL', 0, 0)], 38_000);
+    const priced = build([row('MSFT', 412.3, 600), row('AAPL', 298.6, 0)], 38_000);
+
+    expect(totalValue(unpriced)).toBe(totalValue(priced));
+    expect(weight(unpriced, stockOf(unpriced, 'MSFT'))).toBeCloseTo(
+      weight(priced, stockOf(priced, 'MSFT')),
+      9,
+    );
+  });
+
+  it('hides real value, and inflates every other weight, when shares are held', () => {
+    const unpriced = build([row('MSFT', 412.3, 600), row('AAPL', 0, 500)], 38_000);
+    const priced = build([row('MSFT', 412.3, 600), row('AAPL', 298.6, 500)], 38_000);
+
+    expect(totalValue(priced) - totalValue(unpriced)).toBeCloseTo(149_300, 6);
+    expect(weight(unpriced, stockOf(unpriced, 'MSFT'))).toBeCloseTo(86.684, 3);
+    expect(weight(priced, stockOf(priced, 'MSFT'))).toBeCloseTo(56.911, 3);
+  });
+
+  it('blocks the export for either fault', () => {
+    expect(unpricedPositions(build([row('AAPL', 0, 0)], 0))).toHaveLength(1);
+    expect(unpricedPositions(build([row('AAPL', 0, 500)], 0))).toHaveLength(1);
+  });
+});

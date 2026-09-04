@@ -272,9 +272,16 @@ export default function LotAwareTable({
                   </td>
                   <td className="td" colSpan={8}>
                     <div className="flex flex-wrap items-center gap-3">
+                      {/* Two different faults wear the same red, and saying the wrong one is
+                          worse than saying neither. A row holding shares with no price is
+                          missing from the account total, which drags every other weight up. A
+                          row holding nothing distorts no total at all — zero shares are worth
+                          zero at any price — it simply cannot be turned into a share count. */}
                       <span className="font-sans text-[13.5px] font-semibold text-sell">
-                        Set a price to trade this position. Until then every weight on the page is
-                        overstated, and the trade log will not export.
+                        {s.shares > 0
+                          ? `${fmtShares(s.shares)} sh held with no price, so this position is missing from the account total and every weight on the page is overstated.`
+                          : 'No price, so this target cannot be turned into a share count.'}{' '}
+                        The trade log will not export until it has one.
                       </span>
                       <label className="flex items-center gap-2">
                         <span className="font-sans text-[12.5px] text-ink-soft">$</span>

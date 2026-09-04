@@ -315,7 +315,11 @@ export default function Explorer({ slot }: { slot: Slot }) {
                     {' ('}
                     {unpriced.map((s) => s.sym).join(', ')}
                     {'). '}
-                    Every weight here is overstated until they are priced.
+                    {/* Only claim the stronger fault when it is actually present: an unpriced
+                        row holding nothing leaves the totals correct. */}
+                    {unpriced.some((s) => s.shares > 0)
+                      ? 'Shares are held with no price, so the account total is short and every weight here is overstated.'
+                      : 'Their targets cannot be turned into share counts.'}
                   </span>
                 )}
                 <button

@@ -170,15 +170,22 @@ export function needsDecision(p: Portfolio, s: Stock): boolean {
 /**
  * Positions the tool cannot value, and therefore cannot honestly report on.
  *
- * This is worse than a missing figure on one row. Total account value is the denominator of every
- * weight and every band in dollars, and an unpriced holding contributes nothing to it — so the
- * total is understated and *every other position's* weight is overstated to match. One row
- * without a price quietly moves every number on the page, in a direction nothing on screen
- * explains.
+ * Two distinct faults, both blocking, and worth keeping apart because only one of them moves
+ * other people's numbers:
  *
- * That is why the trade log will not export while this is non-empty: a spreadsheet leaves the
- * building and outlives the session that produced it, and it would carry percentages that are
- * wrong without saying so.
+ * A row **holding shares** with no price is missing from total account value, which is the
+ * denominator under every weight and every band in dollars. The total comes out short and every
+ * other position reads as a larger share of the account than it is. Only reachable by clearing a
+ * price by hand — the parser skips any holdings row without a usable one — but the damage is
+ * silent and large.
+ *
+ * A row **holding nothing** with no price distorts no total: zero shares are worth zero at any
+ * price. What it cannot do is convert its target weight into a share count, so the model's
+ * instruction for that position simply has no answer.
+ *
+ * Either way the trade log will not export, because a spreadsheet outlives the session that made
+ * it — in the first case carrying percentages that are wrong, in the second a plan with a hole
+ * in it, and neither says so on the page.
  */
 export function unpricedPositions(p: Portfolio): Stock[] {
   return p.stocks.filter((s) => s.price <= 0);
