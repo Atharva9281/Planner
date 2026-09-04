@@ -21,6 +21,11 @@ export default function Orders({ state }: { state: ExplorerState }) {
   const [showSteps, setShowSteps] = useState(false);
   const { orders, cashBefore, cashAfter, steps } = orderSummary(state);
 
+  /* Where cash sits once every one of these orders has been placed. The same figure on every
+     row, deliberately: these are net orders with no sequence to run in, so a per-row balance
+     would be inventing an order of execution the tool never decided. */
+  const cashPercent = cashPctOf(cashAfter, state.portfolio);
+
   if (orders.length === 0) {
     return (
       <p className="px-4 py-8 text-center text-[14px] text-ink-soft">
@@ -42,8 +47,12 @@ export default function Orders({ state }: { state: ExplorerState }) {
               <th className="th th-lead rounded-tl-lg">Symbol</th>
               <th className="th">Action</th>
               <th className="th text-right">Shares</th>
+              <th className="th text-right">Opening</th>
+              <th className="th th-lead text-right">Total</th>
               <th className="th text-right">Price</th>
-              <th className="th th-lead text-right">Amount</th>
+              <th className="th text-right">Amount</th>
+              <th className="th th-lead text-right">Cash</th>
+              <th className="th text-right">Cash %</th>
               <th className="th rounded-tr-lg">Note</th>
             </tr>
           </thead>
@@ -61,8 +70,21 @@ export default function Orders({ state }: { state: ExplorerState }) {
                   </span>
                 </td>
                 <td className="td text-right font-semibold">{fmtShares(o.shares)}</td>
+                <td className="td text-right text-ink-soft">{fmtShares(o.openingShares)}</td>
+                <td className="td text-right font-semibold">{fmtShares(o.resultingShares)}</td>
                 <td className="td text-right">{money(o.price)}</td>
                 <td className="td text-right font-semibold">{money(o.amount)}</td>
+                {/* Signed by what it does to the balance, and coloured to match: money out on a
+                    buy, money in on a sell. */}
+                <td
+                  className={`td text-right font-semibold ${
+                    o.cash < 0 ? 'text-sell' : 'text-buy'
+                  }`}
+                >
+                  {o.cash < 0 ? '−' : '+'}
+                  {money(Math.abs(o.cash))}
+                </td>
+                <td className="td text-right text-ink-soft">{pct(cashPercent)}</td>
                 <td className="td text-[13px] whitespace-normal text-ink-soft">
                   {o.source === 'offModel'
                     ? 'Not in the model. Sold entire, proceeds to cash.'
@@ -76,16 +98,16 @@ export default function Orders({ state }: { state: ExplorerState }) {
             {/* Where the cash lands. On the same table so it prints and copies with the orders,
                 rather than being a caption that gets left behind. */}
             <tr className="bg-paper">
-              <td className="td font-sans text-[13px] font-semibold text-ink-soft" colSpan={4}>
+              <td className="td font-sans text-[13px] font-semibold text-ink-soft" colSpan={7}>
                 Cash after these orders
               </td>
               <td className="td text-right font-mono text-[13.5px] font-semibold tabular-nums">
                 {money(cashAfter)}
               </td>
-              <td className="td text-[13px] text-ink-soft">
-                from {money(cashBefore)} · {pct(cashPctOf(cashAfter, state.portfolio))} of the
-                account
+              <td className="td text-right font-mono text-[13px] tabular-nums text-ink-soft">
+                {pct(cashPercent)}
               </td>
+              <td className="td text-[13px] text-ink-soft">from {money(cashBefore)}</td>
             </tr>
           </tbody>
         </table>

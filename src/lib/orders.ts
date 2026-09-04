@@ -22,8 +22,19 @@ export interface Order {
   action: TradeAction;
   /** Always positive. The direction lives in `action`. */
   shares: number;
+  /** Where the position stood when the files were loaded. */
+  openingShares: number;
+  /** Where it ends up: the opening count plus or minus the shares traded. */
+  resultingShares: number;
   price: number;
+  /** Price times shares. Always positive — this is the size of the trade, not its direction. */
   amount: number;
+  /**
+   * The same figure signed by what it does to the balance: negative when cash is spent on a buy,
+   * positive when a sell raises it. Kept beside `amount` rather than replacing it because the two
+   * answer different questions — how big is this trade, and which way does the money go.
+   */
+  cash: number;
   source: 'model' | 'offModel';
 }
 
@@ -44,17 +55,22 @@ export function netOrders(state: ExplorerState): Order[] {
   const orders: Order[] = [];
 
   for (const stock of state.portfolio.stocks) {
-    const delta = stock.shares - (state.baseline.shares[stock.id] ?? 0);
+    const opening = state.baseline.shares[stock.id] ?? 0;
+    const delta = stock.shares - opening;
     if (delta === 0) continue;
 
     const shares = Math.abs(delta);
+    const amount = shares * stock.price;
     orders.push({
       stockId: stock.id,
       sym: stock.sym,
       action: delta > 0 ? 'BUY' : 'SELL',
       shares,
+      openingShares: opening,
+      resultingShares: stock.shares,
       price: stock.price,
-      amount: shares * stock.price,
+      amount,
+      cash: delta > 0 ? -amount : amount,
       source: 'model',
     });
   }
@@ -71,13 +87,17 @@ export function netOrders(state: ExplorerState): Order[] {
   return orders;
 }
 
+/** Sold whole, so it opens at whatever was held and ends at nothing. */
 const orderFromSoldHolding = (h: OffModelHolding): Order => ({
   stockId: null,
   sym: h.sym,
   action: 'SELL',
   shares: h.shares,
+  openingShares: h.shares,
+  resultingShares: 0,
   price: h.price,
   amount: h.shares * h.price,
+  cash: h.shares * h.price,
   source: 'offModel',
 });
 

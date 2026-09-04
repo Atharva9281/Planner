@@ -21,9 +21,20 @@ import { Cell, SheetSpec } from './write';
  * of one.
  */
 
-export const ORDER_HEADERS = ['Symbol', 'Action', 'Shares', 'Price', 'Amount', 'Note'] as const;
+export const ORDER_HEADERS = [
+  'Symbol',
+  'Action',
+  'Shares',
+  'Opening shares',
+  'Total shares',
+  'Price',
+  'Amount',
+  'Cash',
+  'Cash %',
+  'Note',
+] as const;
 
-const COLUMN_WIDTHS = [12, 9, 11, 13, 15, 48];
+const COLUMN_WIDTHS = [12, 9, 11, 15, 13, 12, 14, 14, 10, 44];
 
 const text = (value: string): Cell => ({ value, format: 'text' });
 const num = (value: number): Cell => ({ value, format: 'number' });
@@ -43,13 +54,22 @@ export function ordersSheet(
 ): SheetSpec {
   const rows: Cell[][] = [ORDER_HEADERS.map((h) => ({ value: h, format: 'header' as const }))];
 
+  /* Where cash sits once all of these are placed. The same on every row on purpose: net orders
+     carry no sequence, so a per-row balance would assert an order of execution. */
+  const cashPercent = cashPct(portfolio);
+
   for (const o of orders) {
     rows.push([
       text(o.sym),
       text(o.action),
       num(o.shares),
+      num(o.openingShares),
+      num(o.resultingShares),
       money(o.price),
       money(o.amount),
+      // Signed, so the column sums to what the orders do to the balance.
+      money(o.cash),
+      percent(cashPercent),
       text(noteFor(o)),
     ]);
   }
@@ -57,17 +77,23 @@ export function ordersSheet(
   /* The cash these orders move between, and the account they move inside. Kept on this sheet
      rather than only on the Account sheet, because the person reading the orders is the person
      who needs to know whether the cash covers them. */
-  rows.push([blank(), blank(), blank(), blank(), blank(), blank()]);
-  rows.push([text('Cash before'), blank(), blank(), blank(), money(cashBefore), blank()]);
-  rows.push([text('Cash after'), blank(), blank(), blank(), money(portfolio.cash), blank()]);
-  rows.push([
-    text('Total account'),
+  const span = (label: string, value: Cell, note?: string) => [
+    text(label),
     blank(),
     blank(),
     blank(),
-    money(totalValue(portfolio)),
-    text(`Cash is ${cashPct(portfolio).toFixed(3)}% of it.`),
-  ]);
+    blank(),
+    blank(),
+    blank(),
+    value,
+    blank(),
+    text(note ?? ''),
+  ];
+
+  rows.push(ORDER_HEADERS.map(() => blank()));
+  rows.push(span('Cash before', money(cashBefore)));
+  rows.push(span('Cash after', money(portfolio.cash), `${cashPercent.toFixed(3)}% of the account`));
+  rows.push(span('Total account', money(totalValue(portfolio))));
 
   return { name: 'Orders', columns: COLUMN_WIDTHS, rows };
 }

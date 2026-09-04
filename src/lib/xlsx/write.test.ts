@@ -146,10 +146,25 @@ describe('the orders sheet', () => {
 
     const row = rowValues(xml, 2);
     expect(row[2]).toBe(String(first.shares));
-    expect(row[3]).toBe(String(first.price));
-    expect(row[4]).toBe(String(first.amount));
+    expect(row[3]).toBe(String(first.openingShares));
+    expect(row[4]).toBe(String(first.resultingShares));
+    expect(row[5]).toBe(String(first.price));
+    expect(row[6]).toBe(String(first.amount));
+    // Signed by direction, so the column sums to what the orders do to the balance.
+    expect(row[7]).toBe(String(first.cash));
     // No currency symbols or thousands separators anywhere in the numeric cells.
-    for (const i of [2, 3, 4]) expect(row[i]).toMatch(/^-?\d+(\.\d+)?$/);
+    for (const i of [2, 3, 4, 5, 6, 7, 8]) expect(row[i]).toMatch(/^-?\d+(\.\d+)?$/);
+  });
+
+  it('carries the opening count, the traded count and the total that follows from them', () => {
+    const state = traded();
+    const { orders } = orderSummary(state);
+
+    for (const o of orders) {
+      const step = o.action === 'BUY' ? o.shares : -o.shares;
+      expect(o.openingShares + step).toBe(o.resultingShares);
+      expect(o.cash).toBeCloseTo(o.action === 'BUY' ? -o.amount : o.amount, 6);
+    }
   });
 
   it('states the cash the orders move between, once, at the foot', () => {
@@ -161,9 +176,9 @@ describe('the orders sheet', () => {
     // empty, so a positional read would slide the money cell left.
     const foot = 1 + orders.length + 2;
     expect(cellAt(xml, `A${foot}`)).toBe('Cash before');
-    expect(cellAt(xml, `E${foot}`)).toBe(String(cashBefore));
+    expect(cellAt(xml, `H${foot}`)).toBe(String(cashBefore));
     expect(cellAt(xml, `A${foot + 1}`)).toBe('Cash after');
-    expect(cellAt(xml, `E${foot + 1}`)).toBe(String(state.portfolio.cash));
+    expect(cellAt(xml, `H${foot + 1}`)).toBe(String(state.portfolio.cash));
     expect(cellAt(xml, `A${foot + 2}`)).toBe('Total account');
   });
 
