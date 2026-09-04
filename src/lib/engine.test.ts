@@ -17,6 +17,7 @@ import {
   planToShares,
   totalValue,
   unpricedPositions,
+  afterTrading,
   whatIf,
   weight,
 } from './engine';
@@ -542,5 +543,62 @@ describe('what an unpriced position does to the totals', () => {
   it('blocks the export for either fault', () => {
     expect(unpricedPositions(build([row('AAPL', 0, 0)], 0))).toHaveLength(1);
     expect(unpricedPositions(build([row('AAPL', 0, 500)], 0))).toHaveLength(1);
+  });
+});
+
+/**
+ * The box beside these columns takes an amount to trade, because the columns beside it state
+ * amounts to trade. It used to take a holding total, so reading 342 out of "room to the ceiling"
+ * and typing it against a 379-share position produced a sell of 37 — the right figure, the
+ * opposite trade, with nothing to say it had been misread.
+ */
+describe('turning an amount to trade into where the position lands', () => {
+  const held = (shares: number): Stock => ({
+    id: 'x',
+    sym: 'AAPL',
+    price: 319.02,
+    target: 2.5,
+    bandMin: 2,
+    bandMax: 6,
+    shares,
+  });
+
+  it('adds a buy to what is already held', () => {
+    // The case from the real account: 379 held, 342 of room to the ceiling.
+    expect(afterTrading(held(379), 342)).toBe(721);
+  });
+
+  it('subtracts a sell from it', () => {
+    expect(afterTrading(held(379), -138)).toBe(241);
+  });
+
+  it('stops a sell at the whole holding rather than going negative', () => {
+    // A negative share count would subtract value from the account total and inflate every
+    // other weight drawn from it.
+    expect(afterTrading(held(379), -500)).toBe(0);
+    expect(afterTrading(held(0), -100)).toBe(0);
+  });
+
+  it('ignores a fractional amount rather than inventing a part share', () => {
+    expect(afterTrading(held(379), 12.9)).toBe(391);
+    expect(afterTrading(held(379), -12.9)).toBe(367);
+  });
+
+  it('prices the landing through the untouched engine', () => {
+    const p = samplePortfolio();
+    const msft = stockOf(p, 'MSFT'); // 600 held
+
+    // Trading +100 has to price identically to asking for a holding of 700.
+    const viaDelta = whatIf(p, msft, afterTrading(msft, 100));
+    const viaTotal = whatIf(p, msft, 700);
+
+    expect(viaDelta).toEqual(viaTotal);
+    expect(viaDelta.action).toBe('BUY');
+
+    // And the cash clamp still bites through the new path: $38,000 buys 92 of the 100 asked
+    // for at $412.30, which is a partial fill rather than a silent shortfall.
+    expect(viaDelta.requested).toBe(100);
+    expect(viaDelta.shares).toBe(92);
+    expect(viaDelta.partial).toBe(true);
   });
 });

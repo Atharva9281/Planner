@@ -239,7 +239,7 @@ export default function LotAwareTable({
             <th className={`th ${RAW_COLUMN}`}>Room to the ceiling</th>
             <th className={`th ${RAW_COLUMN}`}>Shares cash affords</th>
             <th className={`th ${RAW_COLUMN}`}>Room to the floor</th>
-            <th className="th th-lead rounded-tr-lg">What if I held…</th>
+            <th className="th th-lead rounded-tr-lg">Buy or sell</th>
           </tr>
         </thead>
         <tbody>

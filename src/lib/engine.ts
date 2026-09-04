@@ -332,6 +332,21 @@ export interface WhatIf {
 }
 
 /**
+ * Where a position lands if you trade this many shares of it. Negative sells.
+ *
+ * The bridge between how the row reads and how the engine thinks. Every figure beside the input
+ * is a movement — room to the ceiling, shares the cash affords, room to the floor — while
+ * everything downstream of here works in destinations. Converting in one named place keeps the
+ * lot rule, the band checks and the cash clamp untouched.
+ *
+ * A sell stops at the whole holding: there is nothing beyond it to sell, and a negative share
+ * count would poison total account value and every weight drawn from it.
+ */
+export function afterTrading(s: Stock, delta: number): number {
+  return Math.max(0, s.shares + Math.trunc(delta));
+}
+
+/**
  * Prices a hypothetical share count without touching the portfolio.
  *
  * Deliberately permissive: an advisor exploring "what if I held 700 of these" is asking a

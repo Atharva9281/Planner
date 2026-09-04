@@ -31,7 +31,7 @@ const COLUMNS: { label: string; raw?: true }[] = [
   { label: 'Room to the ceiling', raw: true },
   { label: 'Shares cash affords', raw: true },
   { label: 'Room to the floor', raw: true },
-  { label: 'What if I held…' },
+  { label: 'Buy or sell' },
 ];
 
 const TILES = ['Total account', 'Cash', 'Target', 'Ceiling', 'Floor'];
