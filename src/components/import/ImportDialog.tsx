@@ -23,18 +23,11 @@ import { ExplorerState } from '@/lib/types';
  */
 export default function ImportDialog({
   initial,
-  replaces,
   onClose,
   onApply,
 }: {
   /** A parse already done on the page behind, so the dialog opens straight into the review. */
   initial?: ParsedImport;
-  /**
-   * What applying would overwrite, phrased for the footer, or null when the workspace is empty.
-   * Warned about here rather than in a dialog of its own: a confirmation stacked on top of this
-   * one would cover the very table the advisor is checking before they commit.
-   */
-  replaces?: string | null;
   onClose: () => void;
   onApply: (state: ExplorerState) => void;
 }) {
@@ -102,30 +95,20 @@ export default function ImportDialog({
                     }`}
               </span>
               <button
-                className={replaces ? 'btn-sell px-4 py-2.5 text-[13.5px]' : 'btn-solid'}
+                className="btn-solid"
                 disabled={!preview || preview.portfolio.stocks.length === 0}
                 onClick={() => preview && onApply(preview)}
               >
-                {replaces ? 'Replace and apply' : 'Apply to portfolio'}
+                Apply to portfolio
               </button>
             </div>
           </>
         ) : undefined
       }
     >
-      {/* Stated before the review rather than beside the button, so it is read while deciding
-          rather than at the moment of clicking. */}
-      {parsed && replaces && (
-        <div className="mb-6 rounded-lg border border-[#e7c48a] bg-warn-soft px-4 py-3.5">
-          <p className="text-[14px] font-bold text-warn">This replaces what is open now</p>
-          <p className="mt-1.5 max-w-2xl text-[13.5px] leading-relaxed text-warn">
-            Applying discards {replaces}. The exports behind it cannot be read back
-            automatically, so that work would have to be done again. Cancel and download the
-            trade log first if you need it.
-          </p>
-        </div>
-      )}
-
+      {/* No "this replaces what is open" warning here on purpose. This dialog is only reachable
+          from the empty-workspace screen, so by the time it opens there is nothing left to
+          replace — the discard was already confirmed on the way in. */}
       {nothingFound && (
         <p className="rounded-lg bg-warn-soft px-4 py-3 text-[13.5px] leading-relaxed text-warn">
           Nothing recognisable was found in those files.

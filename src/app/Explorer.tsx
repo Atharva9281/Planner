@@ -346,7 +346,6 @@ export default function Explorer({ slot }: { slot: Slot }) {
       {openModal === 'import' && (
         <ImportDialog
           initial={pendingImport ?? undefined}
-          replaces={atRisk.length > 0 ? atRisk.join(' and ') : null}
           onClose={closeImport}
           onApply={(next) => {
             setState(next);
