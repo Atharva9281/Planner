@@ -175,6 +175,67 @@ function Destination({
   );
 }
 
+/**
+ * The one column that is not a destination: how many shares the idle cash can pay for.
+ *
+ * Its button spends the lot of it, which is the only control in the app that will knowingly take
+ * a position past its own ceiling — cash buys 92 shares of MSFT and the band stops at 614, so
+ * landing at 692 breaks the mandate. Asked for by the CFP, so it exists; it states where it
+ * lands and says plainly when that is outside the band, because a breach made in one click
+ * should not be discovered afterwards.
+ */
+function SpendTheCash({
+  stock,
+  affordable,
+  maxShares,
+  cash,
+  canTrade,
+  onGo,
+}: {
+  stock: Stock;
+  affordable: number;
+  maxShares: number;
+  cash: number;
+  canTrade: boolean;
+  onGo: () => void;
+}) {
+  const landing = stock.shares + affordable;
+  const breaches = landing > maxShares;
+
+  return (
+    <>
+      <span className="text-[15px] font-semibold">{fmtShares(affordable)} sh</span>
+      <span className="sub">
+        {money(cash)} / {money(stock.price)}
+      </span>
+
+      {affordable > 0 && (
+        <>
+          <span className="sub">would hold {fmtShares(landing)} sh</span>
+          {breaches && (
+            <span className="sub font-semibold text-sell">
+              past the {stock.bandMax}% ceiling of {fmtShares(maxShares)} sh
+            </span>
+          )}
+          {canTrade && (
+            <button
+              className={`mt-2 ${breaches ? 'btn-sell' : 'btn-buy'}`}
+              title={
+                breaches
+                  ? 'Buys every share the cash affords, which takes this position outside its own band.'
+                  : 'Buys every share the cash affords.'
+              }
+              onClick={onGo}
+            >
+              Spend the cash
+            </button>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 const CAPTION = 'text-[11.5px] font-semibold uppercase tracking-[0.04em] text-ink-soft';
 
 /** One figure in the folded strip, carrying the column header it came from. */
@@ -207,6 +268,7 @@ function BandStrip({
   canTrade,
   onBuy,
   onSell,
+  onSpend,
 }: {
   stock: Stock;
   minShares: number;
@@ -217,6 +279,8 @@ function BandStrip({
   canTrade: boolean;
   onBuy: (stockId: string, mode: BuyMode) => void;
   onSell: (stockId: string, mode: SellMode) => void;
+  /** Buys every share the cash affords, band or no band. */
+  onSpend: () => void;
 }) {
   return (
     <div className="px-3 pt-1 pb-4">
@@ -265,10 +329,36 @@ function BandStrip({
           </span>
         </StripFigure>
 
-        <StripFigure label="Cash buys">
+        {/* The folded column keeps its button, or folding would quietly remove a control rather
+            than move it. */}
+        <StripFigure
+          label="Cash buys"
+          action={
+            canTrade &&
+            rawBuy.cashAfford > 0 && (
+              <button
+                className={
+                  stock.shares + rawBuy.cashAfford > maxShares ? 'btn-sell' : 'btn-buy'
+                }
+                onClick={() => onSpend()}
+              >
+                Spend the cash
+              </button>
+            )
+          }
+        >
           <span className="text-[15px] text-ink-soft">{fmtShares(rawBuy.cashAfford)} sh</span>
           <span className="font-mono text-[12px] text-ink-soft">
             {money(cash)} / {money(stock.price)}
+          </span>
+          <span className="font-mono text-[12px] text-ink-soft">
+            would hold {fmtShares(stock.shares + rawBuy.cashAfford)} sh
+            {stock.shares + rawBuy.cashAfford > maxShares && (
+              <span className="font-semibold text-sell">
+                {' '}
+                · past the {stock.bandMax}% ceiling
+              </span>
+            )}
           </span>
         </StripFigure>
       </div>
@@ -503,14 +593,24 @@ export default function LotAwareTable({
                     )}
                   </td>
 
-                  {/* ---- 3. what the model asks for, before the lot rule ---- */}
+                  {/* ---- 3. what the model asks for, before the lot rule ----
+
+                       Its own button, asked for by the CFP. It lands on the model's percentage
+                       exactly rather than on the nearest lot, which is the more faithful trade
+                       and the less tidy one — the column beside it holds the lot-aware answer,
+                       and the two are one click apart on purpose. */}
                   <td className="td">
-                    <span className="text-[15px] font-semibold">
-                      {fmtShares(r.targetShares)} sh
-                    </span>
-                    <span className="sub">
-                      {s.target}% of the account, raw = {r.target.raw.toFixed(1)}
-                    </span>
+                    <Destination
+                      shares={r.targetShares}
+                      caption={`${s.target}% of the account, raw = ${r.target.raw.toFixed(1)}`}
+                      price={s.price}
+                      held={s.shares}
+                      canTrade={canTrade}
+                      affordable={r.canAfford}
+                      cash={portfolio.cash}
+                      onGo={() => onTradeTo(s.id, r.targetShares)}
+                      goLabel="Trade to raw target"
+                    />
                   </td>
 
                   {/* ---- 4. the lot-aware answer, and the one move that reaches it ---- */}
@@ -622,10 +722,14 @@ export default function LotAwareTable({
 
                   {/* ---- 9. what the idle cash could pay for ---- */}
                   <td className={`td ${FOLD}`}>
-                    <span className="text-ink-soft">{fmtShares(r.canAfford)} sh</span>
-                    <span className="sub">
-                      {money(portfolio.cash)} / {money(s.price)}
-                    </span>
+                    <SpendTheCash
+                      stock={s}
+                      affordable={r.canAfford}
+                      maxShares={r.maxShares}
+                      cash={portfolio.cash}
+                      canTrade={canTrade}
+                      onGo={() => onTradeTo(s.id, s.shares + r.canAfford)}
+                    />
                   </td>
 
                   {/* ---- 10. the advisor's own number, and the way to shut the row ---- */}
@@ -662,6 +766,7 @@ export default function LotAwareTable({
                       canTrade={canTrade}
                       onBuy={onBuy}
                       onSell={onSell}
+                      onSpend={() => onTradeTo(s.id, s.shares + r.canAfford)}
                     />
                   </td>
                 </tr>
