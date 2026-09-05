@@ -169,14 +169,20 @@ function Destination({
         )}
       </div>
 
+      {/* Just "Trade". The column says where, the line above says how much and which way, and
+          the colour says buy or sell — so spelling all three out again on the button only made
+          seven buttons of seven different widths. `goLabel` survives as the accessible name, so
+          a screen reader still hears "Trade to the lowest lot" rather than one of seven "Trade". */}
       {action !== null && canTrade && onGo && (
         <div className="cell-action">
           <button
             className={action === 'BUY' ? 'btn-buy' : 'btn-sell'}
             disabled={action === 'BUY' && affordable !== undefined && affordable <= 0}
+            aria-label={goLabel}
+            title={goLabel}
             onClick={onGo}
           >
-            {goLabel}
+            Trade
           </button>
         </div>
       )}
@@ -230,10 +236,18 @@ function SpendTheCash({
         )}
       </div>
 
+      {/* Green even when it breaches. Once every button reads "Trade", colour is the only thing
+          left saying buy or sell, so it cannot also mean "this one is dangerous" — the red line
+          above carries that, and says exactly which ceiling is being passed. */}
       {affordable > 0 && canTrade && (
         <div className="cell-action">
           <button
-            className={breaches ? 'btn-sell' : 'btn-buy'}
+            className="btn-buy"
+            aria-label={
+              breaches
+                ? `Spend the cash on ${stock.sym}, past its ${stock.bandMax}% ceiling`
+                : `Spend the cash on ${stock.sym}`
+            }
             title={
               breaches
                 ? 'Buys every share the cash affords, which takes this position outside its own band.'
@@ -241,7 +255,7 @@ function SpendTheCash({
             }
             onClick={onGo}
           >
-            Spend the cash
+            Trade
           </button>
         </div>
       )}
@@ -343,18 +357,14 @@ function BandStrip({
         </StripFigure>
 
         {/* The folded column keeps its button, or folding would quietly remove a control rather
-            than move it. */}
+            than move it. Labelled in full here: the strip has room, and none of the alignment
+            that forced one word on the columns applies to it. */}
         <StripFigure
           label="Cash buys"
           action={
             canTrade &&
             rawBuy.cashAfford > 0 && (
-              <button
-                className={
-                  stock.shares + rawBuy.cashAfford > maxShares ? 'btn-sell' : 'btn-buy'
-                }
-                onClick={() => onSpend()}
-              >
+              <button className="btn-buy" onClick={() => onSpend()}>
                 Spend the cash
               </button>
             )
