@@ -1,5 +1,4 @@
 import { Fragment } from 'react';
-import BandBar from './BandBar';
 import RowToggle from './RowToggle';
 import { NumInput } from './Inputs';
 import WhatIfCell from './WhatIfCell';
@@ -17,7 +16,6 @@ import {
   rawMinSell,
   RawMaxBuy,
   RawMinSell,
-  totalValue,
   weight,
 } from '@/lib/engine';
 import { money, pct, shares as fmtShares } from '@/lib/format';
@@ -52,7 +50,6 @@ interface Props {
 
 /** Everything one row needs, assembled from the engine so the JSX below does no arithmetic. */
 function row(p: Portfolio, s: Stock) {
-  const total = totalValue(p);
   const { minShares, maxShares } = bandShareLimits(p, s);
   const target = lotAwareTarget(p, s);
   const { highestLot } = highestLotWithinBand(p, s);
@@ -76,7 +73,6 @@ function row(p: Portfolio, s: Stock) {
     buyToTarget: Math.max(target.goal - s.shares, 0),
     sellToTarget: Math.max(s.shares - target.goal, 0),
     weight: weight(p, s),
-    goalWeight: total > 0 ? ((target.goal * s.price) / total) * 100 : 0,
     mandatory: mandatoryStatus(p, s),
   };
 }
@@ -602,21 +598,19 @@ export default function LotAwareTable({
                     </div>
                   </td>
 
-                  {/* ---- 2. where it actually sits ---- */}
+                  {/* ---- 2. where it actually sits ----
+
+                       No band bar here. It was 128px of fixed width on a column whose figures
+                       need barely half that, and it was drawing what the numbers next to it
+                       already say: the weight, and whether that weight is outside the band. On
+                       the cash tile it earns its space, because there is one of it; twenty-odd
+                       of them down a table cost a column's width each and add nothing. */}
                   <td className="td">
                     <span className="text-[15px] font-semibold">{fmtShares(s.shares)} sh</span>
                     <span className={`sub ${r.mandatory ? 'font-semibold text-sell' : ''}`}>
-                      {pct(r.weight)}
+                      {pct(r.weight)} of {s.bandMin}&ndash;{s.bandMax}%
                     </span>
                     <span className="sub">{money(s.shares * s.price)}</span>
-                    <BandBar
-                      className="mt-2"
-                      bandMin={s.bandMin}
-                      bandMax={s.bandMax}
-                      weight={r.weight}
-                      goalWeight={r.goalWeight}
-                      breached={r.mandatory !== null}
-                    />
                     {r.mandatory && (
                       <span className="badge mt-2 bg-sell-soft text-sell">
                         MANDATORY, {r.mandatory} band
