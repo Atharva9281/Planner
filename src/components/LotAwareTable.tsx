@@ -25,15 +25,15 @@ import { BuyMode, Portfolio, SellMode, Stock } from '@/lib/types';
 import { RowCollapse } from '@/lib/useRowCollapse';
 
 /**
- * The three raw-room columns are the first thing to go when the window cannot hold nine.
+ * The three columns that fold when the window cannot hold ten.
  *
- * They answer a different question from the rest of the row — the same position with the lot
- * preference switched off — so folding them costs less than folding anything else. Below the
- * `wide` breakpoint they leave the header and reappear here, as a strip beneath the row they
- * describe. Every figure and both buttons come with them: this is the same content re-laid, not
- * a summary of what a wider window would have shown.
+ * Every column here is a share count the position could hold, so they pair off: a band edge and
+ * the nearest lot inside it, twice over. When space runs out it is the raw edges that go, because
+ * the lot beside each one is the answer this tool exists to give — and they come back as a strip
+ * under the row rather than being lost. What the cash affords folds with them, being the one
+ * figure that describes the account rather than the position.
  */
-const RAW_COLUMN = 'hidden wide:table-cell';
+const FOLD = 'hidden wide:table-cell';
 
 interface Props {
   portfolio: Portfolio;
@@ -44,7 +44,7 @@ interface Props {
   onResetStock: (stockId: string) => void;
   /** Lets an imported position that arrived without a price be given one in place. */
   onPrice: (stockId: string, price: number) => void;
-  /** Executes a what-if: move this holding to exactly this many shares. */
+  /** Executes a what-if: move this holding by this many shares. */
   onTradeTo: (stockId: string, targetShares: number) => void;
   /** Row open/shut state, held above so Expand all sits on the panel header. */
   collapse: RowCollapse;
@@ -57,19 +57,24 @@ function row(p: Portfolio, s: Stock) {
   const target = lotAwareTarget(p, s);
   const { highestLot } = highestLotWithinBand(p, s);
   const { lowestLot } = lowestLotWithinBand(p, s);
+  const lots = lotRounds(s);
 
   return {
+    /* The band edges as plain share counts: the fewest that stay at or above the floor, the most
+       that stay at or below the ceiling. */
     minShares,
     maxShares,
+    /** The raw target in whole shares, before the lot rule has any say. */
+    targetShares: Math.round(target.raw),
     target,
-    highestLot,
-    lowestLot,
-    lots: lotRounds(s),
+    /* The nearest lot inside each edge. Null where the lot rule does not apply at all, which is
+       true of anything bought in dollars with fractional shares. */
+    lowerLot: lots ? lowestLot : null,
+    upperLot: lots ? highestLot : null,
+    lots,
     canAfford: affordableShares(p, s),
     buyToTarget: Math.max(target.goal - s.shares, 0),
     sellToTarget: Math.max(s.shares - target.goal, 0),
-    buyToHighLot: Math.max(highestLot - s.shares, 0),
-    sellToLowLot: Math.max(s.shares - lowestLot, 0),
     weight: weight(p, s),
     goalWeight: total > 0 ? ((target.goal * s.price) / total) * 100 : 0,
     mandatory: mandatoryStatus(p, s),
@@ -88,22 +93,97 @@ function Move({ action, n, price }: { action: 'BUY' | 'SELL'; n: number; price: 
   );
 }
 
+/**
+ * A destination the position could hold, and the move that reaches it.
+ *
+ * Every column between the ticker and the cash is one of these: a share count to end at, the
+ * distance from here, and the button that closes it. Stating the destination rather than the
+ * distance is what lets the whole row be read in one unit — the figure in the column is a
+ * holding, never a delta.
+ */
+function Destination({
+  shares,
+  caption,
+  price,
+  held,
+  canTrade,
+  tone = 'plain',
+  badge,
+  onGo,
+  goLabel,
+  affordable,
+  cash,
+}: {
+  shares: number | null;
+  caption: string;
+  price: number;
+  held: number;
+  canTrade: boolean;
+  tone?: 'plain' | 'buy' | 'sell';
+  badge?: React.ReactNode;
+  onGo?: () => void;
+  goLabel?: string;
+  /** Whole shares the cash can pay for, so a buy that outruns it says so before it is pressed. */
+  affordable?: number;
+  cash?: number;
+}) {
+  if (shares === null) {
+    return (
+      <>
+        <span className="sub !mt-0">{caption}</span>
+        <span className="badge mt-2 bg-warn-soft text-warn">no lot here</span>
+      </>
+    );
+  }
+
+  const delta = shares - held;
+  const action = delta > 0 ? 'BUY' : delta < 0 ? 'SELL' : null;
+  const short = action === 'BUY' && affordable !== undefined && affordable < delta;
+
+  return (
+    <>
+      <span
+        className={`text-[15px] font-semibold ${
+          tone === 'buy' ? 'text-buy' : tone === 'sell' ? 'text-sell' : ''
+        }`}
+      >
+        {fmtShares(shares)} sh
+      </span>{' '}
+      {badge}
+      <span className="sub">{caption}</span>
+
+      {action === null ? (
+        <span className="mt-2 block text-ink-soft">already here</span>
+      ) : (
+        <>
+          <Move action={action} n={Math.abs(delta)} price={price} />
+          {short && cash !== undefined && (
+            <span className="sub text-warn">only {fmtShares(affordable!)} sh affordable now</span>
+          )}
+          {canTrade && onGo && (
+            <button
+              className={`mt-2 ${action === 'BUY' ? 'btn-buy' : 'btn-sell'}`}
+              disabled={action === 'BUY' && affordable !== undefined && affordable <= 0}
+              onClick={onGo}
+            >
+              {goLabel}
+            </button>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 const CAPTION = 'text-[11.5px] font-semibold uppercase tracking-[0.04em] text-ink-soft';
 
-/**
- * One figure in the folded strip, carrying the column header it came from.
- *
- * The header is kept because it is the only thing tying the number to the column it folded out
- * of: an advisor who learned this table on a wide screen should recognise "Room to the ceiling"
- * in the same words, not have to work out which figure it became.
- */
+/** One figure in the folded strip, carrying the column header it came from. */
 function StripFigure({
   label,
   action,
   children,
 }: {
   label: string;
-  /** The column's button, kept on its own line under the number it acts on. */
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -116,13 +196,11 @@ function StripFigure({
   );
 }
 
-/**
- * The raw-room columns as a strip under the row, for windows too narrow to carry them as columns.
- * Rendered only while the row is open, which is also the only time the columns above would have
- * shown anything a shut row does not already state.
- */
-function RawRoomStrip({
+/** The folded columns, under the row rather than beside it. */
+function BandStrip({
   stock,
+  minShares,
+  maxShares,
   rawBuy,
   rawSell,
   cash,
@@ -131,6 +209,8 @@ function RawRoomStrip({
   onSell,
 }: {
   stock: Stock;
+  minShares: number;
+  maxShares: number;
   rawBuy: RawMaxBuy;
   rawSell: RawMinSell;
   cash: number;
@@ -139,50 +219,12 @@ function RawRoomStrip({
   onSell: (stockId: string, mode: SellMode) => void;
 }) {
   return (
-    /* Three fixed tracks rather than a wrapping row: the three figures keep the left-to-right
-       order they have as columns, and each one's button stays under its own number instead of
-       drifting into the next group when the window changes width. */
     <div className="px-3 pt-1 pb-4">
-      <span className={`${CAPTION} text-ink-faint`}>Raw room, no lot preference</span>
+      <span className={`${CAPTION} text-ink-faint`}>The band edges, and what the cash buys</span>
 
       <div className="mt-2.5 grid gap-x-6 gap-y-4 sm:grid-cols-3">
         <StripFigure
-          label="Room to the ceiling"
-          action={
-            canTrade && (
-              <button
-                className="btn-buy"
-                disabled={rawBuy.maxBuy <= 0}
-                onClick={() => onBuy(stock.id, 'rawmax')}
-              >
-                Buy this raw max
-              </button>
-            )
-          }
-        >
-          <span className="text-[15px] font-semibold text-buy">
-            {fmtShares(rawBuy.maxBuy)} sh
-          </span>
-          <span className="font-mono text-[12px] text-ink-soft">
-            {money(rawBuy.maxBuy * stock.price)}
-          </span>
-          {/* The caption names the band, so say plainly when it was the cash that bound it. */}
-          <span className="font-mono text-[12px] text-ink-soft">
-            {rawBuy.limiter === 'band'
-              ? `to the ${stock.bandMax}% ceiling`
-              : 'capped by cash, not the band'}
-          </span>
-        </StripFigure>
-
-        <StripFigure label="Shares cash affords">
-          <span className="text-[15px] text-ink-soft">{fmtShares(rawBuy.cashAfford)} sh</span>
-          <span className="font-mono text-[12px] text-ink-soft">
-            {money(cash)} / {money(stock.price)}
-          </span>
-        </StripFigure>
-
-        <StripFigure
-          label="Room to the floor"
+          label="Lower band"
           action={
             canTrade && (
               <button
@@ -190,19 +232,43 @@ function RawRoomStrip({
                 disabled={rawSell.maxSell <= 0}
                 onClick={() => onSell(stock.id, 'rawmax')}
               >
-                Sell this raw max
+                Sell to the floor
               </button>
             )
           }
         >
-          <span className="text-[15px] font-semibold text-sell">
-            {fmtShares(rawSell.maxSell)} sh
-          </span>
+          <span className="text-[15px] font-semibold text-sell">{fmtShares(minShares)} sh</span>
           <span className="font-mono text-[12px] text-ink-soft">
-            {money(rawSell.maxSell * stock.price)}
+            the {stock.bandMin}% floor
           </span>
+        </StripFigure>
+
+        <StripFigure
+          label="Upper band"
+          action={
+            canTrade && (
+              <button
+                className="btn-buy"
+                disabled={rawBuy.maxBuy <= 0}
+                onClick={() => onBuy(stock.id, 'rawmax')}
+              >
+                Buy to the ceiling
+              </button>
+            )
+          }
+        >
+          <span className="text-[15px] font-semibold text-buy">{fmtShares(maxShares)} sh</span>
           <span className="font-mono text-[12px] text-ink-soft">
-            to the {stock.bandMin}% floor
+            {rawBuy.limiter === 'band'
+              ? `the ${stock.bandMax}% ceiling`
+              : 'capped by cash, not the band'}
+          </span>
+        </StripFigure>
+
+        <StripFigure label="Shares with current cash">
+          <span className="text-[15px] text-ink-soft">{fmtShares(rawBuy.cashAfford)} sh</span>
+          <span className="font-mono text-[12px] text-ink-soft">
+            {money(cash)} / {money(stock.price)}
           </span>
         </StripFigure>
       </div>
@@ -211,10 +277,13 @@ function RawRoomStrip({
 }
 
 /**
- * One row per holding, with every button under the number it acts on: the lot buttons in the
- * columns that define the band edges they move toward, and a single Adjust to target beside the
- * model's own answer. A position is either above or below target, never both, so one button
- * covers it and no permanently-greyed twin sits next to it.
+ * One row per holding, read left to right as share counts: what is held, what the model asks
+ * for, the nearest lot to it, then each band edge with the nearest lot inside it, and finally
+ * what the cash could buy.
+ *
+ * Every column between the ticker and the box is a holding the position could end at, so the row
+ * speaks one unit throughout. Every button sits under the number it produces, which is where the
+ * CFP asked for them and where they stay.
  */
 export default function LotAwareTable({
   portfolio,
@@ -231,14 +300,15 @@ export default function LotAwareTable({
       <table className="w-full border-collapse">
         <thead>
           <tr>
-            <th className="th th-lead rounded-tl-lg">Stock &middot; target</th>
-            <th className="th">Toward the floor</th>
-            <th className="th th-lead">Holding now</th>
-            <th className="th">Toward the ceiling</th>
-            <th className="th th-lead">Lot-aware target</th>
-            <th className={`th ${RAW_COLUMN}`}>Room to the ceiling</th>
-            <th className={`th ${RAW_COLUMN}`}>Shares cash affords</th>
-            <th className={`th ${RAW_COLUMN}`}>Room to the floor</th>
+            <th className="th th-lead rounded-tl-lg">Ticker</th>
+            <th className="th th-lead">Current holdings</th>
+            <th className="th">Target holdings</th>
+            <th className="th th-lead">Lot closest to target</th>
+            <th className={`th ${FOLD}`}>Lower band</th>
+            <th className="th">Lot closest to lower band</th>
+            <th className={`th ${FOLD}`}>Upper band</th>
+            <th className="th">Lot closest to upper band</th>
+            <th className={`th ${FOLD}`}>Shares with current cash</th>
             <th className="th th-lead rounded-tr-lg">Buy or sell</th>
           </tr>
         </thead>
@@ -255,10 +325,7 @@ export default function LotAwareTable({
                while this sits here. It is a fault in the page, not a gap on a line. */
             if (s.price <= 0) {
               return (
-                <tr
-                  key={s.id}
-                  className="bg-sell-soft shadow-[inset_4px_0_0_0_var(--color-sell)]"
-                >
+                <tr key={s.id} className="bg-sell-soft shadow-[inset_4px_0_0_0_var(--color-sell)]">
                   <td className="td font-sans text-[15px] font-bold">
                     {s.sym}
                     {/* Its own line, sized to its text: inline it collides with a four-letter
@@ -270,7 +337,7 @@ export default function LotAwareTable({
                       {s.target}% &middot; {s.bandMin}&ndash;{s.bandMax}%
                     </span>
                   </td>
-                  <td className="td" colSpan={8}>
+                  <td className="td" colSpan={9}>
                     <div className="flex flex-wrap items-center gap-3">
                       {/* Two different faults wear the same red, and saying the wrong one is
                           worse than saying neither. A row holding shares with no price is
@@ -302,115 +369,75 @@ export default function LotAwareTable({
             }
 
             const r = row(portfolio, s);
-            const affordAny = r.canAfford > 0;
             /* Fixed income and any class the tool does not trade: every figure still shown, and
                counted toward account value, but no button anywhere on the row. */
             const canTrade = isTradeable(s);
-            const adjust = !canTrade
-              ? null
-              : r.buyToTarget > 0
-                ? 'BUY'
-                : r.sellToTarget > 0
-                  ? 'SELL'
-                  : null;
-            const adjustN = r.buyToTarget || r.sellToTarget;
 
             /* Inside its band and already at the model's own answer: there is no decision on this
-               row, so it does not open by default. The lot buttons and the what-if are exploration
-               rather than instruction, and the raw room table below never hides them. */
+               row, so it does not open by default. */
             const settled = !needsDecision(portfolio, s);
             const open = collapse.isOpen(s.id, settled);
 
-            /* The two band edges as lots, which is what this table is for. Null when there is no
-               lot on that side to move to. Computed once so the shut row and the open row lead
-               with the same figure and the same wording. */
-            const floorEdge = !r.lots
-              ? { n: r.minShares, label: `${s.bandMin}% floor` }
-              : r.lowestLot > s.shares
-                ? null
-                : { n: r.lowestLot, label: `${s.bandMin}% floor lot` };
-
-            const ceilingEdge = !r.lots
-              ? { n: r.maxShares, label: `${s.bandMax}% ceiling` }
-              : r.highestLot < s.shares
-                ? null
-                : { n: r.highestLot, label: `${s.bandMax}% ceiling lot` };
-
-            /* The same room with the lot preference switched off: as far as the band or the cash
-               allows, odd numbers included. The arithmetic behind these used to sit in a second
-               table; the answers are what the advisor acts on, so only they are kept. */
             const rawBuy = rawMaxBuy(portfolio, s);
             const rawSell = rawMinSell(portfolio, s);
+            const breach = r.mandatory ? 'shadow-[inset_3px_0_0_0_var(--color-sell)]' : '';
 
             if (!open) {
               return (
-                <tr
-                  key={s.id}
-                  className={`${stripe} ${
-                    r.mandatory ? 'shadow-[inset_3px_0_0_0_var(--color-sell)]' : ''
-                  }`}
-                >
+                <tr key={s.id} className={`${stripe} ${breach}`}>
                   {/* A shut row carries share counts and nothing else. Prices, weights, band
                       labels and dollar values are all one expand away, and leaving them out is
-                      what keeps the nine columns inside the window instead of off the side of it.
+                      what keeps ten columns inside the window instead of off the side of it.
                       The one exception is a breach, which is too important to fold away. */}
                   <td className="td py-2.5 align-middle font-sans text-[15px] font-bold">
                     {s.sym}
                   </td>
 
                   <td className="td py-2.5 align-middle whitespace-nowrap">
-                    {floorEdge ? (
-                      `${fmtShares(floorEdge.n)} sh`
-                    ) : (
-                      <span className="text-[12.5px] text-ink-soft">no lot</span>
-                    )}
-                  </td>
-
-                  <td className="td py-2.5 align-middle whitespace-nowrap">
                     <span className="font-semibold">{fmtShares(s.shares)} sh</span>
                     {r.mandatory && (
-                      <span className="badge ml-2.5 bg-sell-soft text-sell">{r.mandatory} band</span>
-                    )}
-                  </td>
-
-                  <td className="td py-2.5 align-middle whitespace-nowrap">
-                    {ceilingEdge ? (
-                      `${fmtShares(ceilingEdge.n)} sh`
-                    ) : (
-                      <span className="text-[12.5px] text-ink-soft">no lot</span>
-                    )}
-                  </td>
-
-                  {/* The move is stated, not offered: nothing on a shut row trades, so none can
-                      be fired by mistake while scanning. Open the row to act. */}
-                  <td className="td py-2.5 align-middle whitespace-nowrap">
-                    {!canTrade ? (
-                      <span className="text-[12.5px] text-ink-soft">not traded here</span>
-                    ) : adjust === null ? (
-                      <span className="text-ink-soft">at target</span>
-                    ) : (
-                      <span
-                        className={`font-semibold ${
-                          adjust === 'BUY' ? 'text-buy' : 'text-sell'
-                        }`}
-                      >
-                        {adjust} {fmtShares(adjustN)} sh
+                      <span className="badge ml-2.5 bg-sell-soft text-sell">
+                        {r.mandatory} band
                       </span>
                     )}
                   </td>
 
-                  {/* Folded away below `wide`, where a shut row keeps only the five columns it
-                      leads with. These three are one expand away, in the strip. */}
-                  <td className={`td py-2.5 align-middle whitespace-nowrap ${RAW_COLUMN}`}>
-                    {fmtShares(rawBuy.maxBuy)} sh
+                  <td className="td py-2.5 align-middle whitespace-nowrap text-ink-soft">
+                    {fmtShares(r.targetShares)} sh
+                  </td>
+
+                  <td className="td py-2.5 align-middle whitespace-nowrap">
+                    {!canTrade ? (
+                      <span className="text-[12.5px] text-ink-soft">not traded here</span>
+                    ) : (
+                      <span className="font-semibold">{fmtShares(r.target.goal)} sh</span>
+                    )}
+                  </td>
+
+                  <td className={`td py-2.5 align-middle whitespace-nowrap ${FOLD}`}>
+                    {fmtShares(r.minShares)} sh
+                  </td>
+                  <td className="td py-2.5 align-middle whitespace-nowrap">
+                    {r.lowerLot === null ? (
+                      <span className="text-[12.5px] text-ink-soft">no lot</span>
+                    ) : (
+                      `${fmtShares(r.lowerLot)} sh`
+                    )}
+                  </td>
+                  <td className={`td py-2.5 align-middle whitespace-nowrap ${FOLD}`}>
+                    {fmtShares(r.maxShares)} sh
+                  </td>
+                  <td className="td py-2.5 align-middle whitespace-nowrap">
+                    {r.upperLot === null ? (
+                      <span className="text-[12.5px] text-ink-soft">no lot</span>
+                    ) : (
+                      `${fmtShares(r.upperLot)} sh`
+                    )}
                   </td>
                   <td
-                    className={`td py-2.5 align-middle whitespace-nowrap text-ink-soft ${RAW_COLUMN}`}
+                    className={`td py-2.5 align-middle whitespace-nowrap text-ink-soft ${FOLD}`}
                   >
-                    {fmtShares(rawBuy.cashAfford)} sh
-                  </td>
-                  <td className={`td py-2.5 align-middle whitespace-nowrap ${RAW_COLUMN}`}>
-                    {fmtShares(rawSell.maxSell)} sh
+                    {fmtShares(r.canAfford)} sh
                   </td>
 
                   <td className="td py-2.5 text-right align-middle">
@@ -424,12 +451,10 @@ export default function LotAwareTable({
               );
             }
 
-            const breach = r.mandatory ? 'shadow-[inset_3px_0_0_0_var(--color-sell)]' : '';
-
             return (
               <Fragment key={s.id}>
                 <tr className={`${stripe} ${breach} row-with-strip`}>
-                  {/* ---- identity, the mandate, and the row-level undo ---- */}
+                  {/* ---- 1. identity, the mandate, and the row-level undo ---- */}
                   <td className="td">
                     <span className="font-sans text-[15px] font-bold">{s.sym}</span>
                     <span className="sub">{money(s.price)}</span>
@@ -440,7 +465,9 @@ export default function LotAwareTable({
                       band {s.bandMin}&ndash;{s.bandMax}%
                     </span>
                     {!canTrade && (
-                      <span className="badge mt-1.5 bg-accent-soft text-accent">held, not traded</span>
+                      <span className="badge mt-1.5 bg-accent-soft text-accent">
+                        held, not traded
+                      </span>
                     )}
                     <button
                       className="btn-ghost mt-2.5 block"
@@ -451,42 +478,7 @@ export default function LotAwareTable({
                     </button>
                   </td>
 
-                  {/* ---- the floor side: the lowest lot the band allows ----
-
-                       This table is the lot-aware one, so the figure here is the lot, not the raw
-                       band edge in shares. The raw edge and the subtraction behind it live in the
-                       raw room table below, which exists for exactly that. */}
-                  <td className="td">
-                    {!floorEdge ? (
-                      <>
-                        <span className="sub !mt-0">{s.bandMin}% floor</span>
-                        <span className="badge mt-2 bg-warn-soft text-warn">
-                          no lot to sell down to
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-[15px] font-semibold">
-                          {fmtShares(floorEdge.n)} sh
-                        </span>
-                        <span className="sub">{floorEdge.label}</span>
-                        {r.lots && r.lowestLot === s.shares ? (
-                          <span className="mt-2 block text-ink-soft">already the lowest lot</span>
-                        ) : (
-                          <>
-                            <Move action="SELL" n={r.sellToLowLot} price={s.price} />
-                            {canTrade && (
-                              <button className="btn-sell mt-2" onClick={() => onSell(s.id, 'lowlot')}>
-                                Sell to lowest lot
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </>
-                    )}
-                  </td>
-
-                  {/* ---- where it actually sits ---- */}
+                  {/* ---- 2. where it actually sits ---- */}
                   <td className="td">
                     <span className="text-[15px] font-semibold">{fmtShares(s.shares)} sh</span>
                     <span className={`sub ${r.mandatory ? 'font-semibold text-sell' : ''}`}>
@@ -508,140 +500,132 @@ export default function LotAwareTable({
                     )}
                   </td>
 
-                  {/* ---- the ceiling side: the highest lot the band allows ---- */}
-                  <td className="td">
-                    {!ceilingEdge ? (
-                      <>
-                        <span className="sub !mt-0">{s.bandMax}% ceiling</span>
-                        <span className="badge mt-2 bg-warn-soft text-warn">
-                          no lot to buy up to
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-[15px] font-semibold">
-                          {fmtShares(ceilingEdge.n)} sh
-                        </span>
-                        <span className="sub">{ceilingEdge.label}</span>
-                        {r.lots && r.highestLot === s.shares ? (
-                          <span className="mt-2 block text-ink-soft">already the highest lot</span>
-                        ) : (
-                          <>
-                            <Move action="BUY" n={r.buyToHighLot} price={s.price} />
-                            {portfolio.cash < r.buyToHighLot * s.price && (
-                              <span className="sub text-warn">
-                                only {r.canAfford} sh affordable now
-                              </span>
-                            )}
-                            {canTrade && (
-                              <button
-                                className="btn-buy mt-2"
-                                disabled={!affordAny}
-                                onClick={() => onBuy(s.id, 'highlot')}
-                              >
-                                Buy to highest lot
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </>
-                    )}
-                  </td>
-
-                  {/* ---- what the model asks for, and the one move that gets there ---- */}
+                  {/* ---- 3. what the model asks for, before the lot rule ---- */}
                   <td className="td">
                     <span className="text-[15px] font-semibold">
-                      {fmtShares(r.target.goal)} sh
-                    </span>{' '}
-                    <span
-                      className={`badge ${
-                        r.target.isLot ? 'bg-buy-soft text-buy' : 'bg-warn-soft text-warn'
-                      }`}
-                    >
-                      {r.target.isLot ? 'LOT' : r.lots ? 'raw, no lot fits' : 'raw'}
+                      {fmtShares(r.targetShares)} sh
                     </span>
                     <span className="sub">
-                      from {s.target}% target, raw = {r.target.raw.toFixed(1)}
+                      {s.target}% of the account, raw = {r.target.raw.toFixed(1)}
                     </span>
+                  </td>
 
+                  {/* ---- 4. the lot-aware answer, and the one move that reaches it ---- */}
+                  <td className="td">
                     {!canTrade ? (
-                      <span className="mt-2 block text-[13px] text-ink-soft">
-                        Fixed income is held and counted, never traded here.
-                      </span>
-                    ) : adjust === null ? (
-                      <span className="mt-2 block text-ink-soft">at target</span>
-                    ) : (
                       <>
-                        <Move action={adjust} n={adjustN} price={s.price} />
-                        {adjust === 'BUY' && portfolio.cash < adjustN * s.price && (
-                          <span className="sub text-warn">
-                            only {r.canAfford} sh affordable now
-                          </span>
-                        )}
-                        <button
-                          className={`mt-2 ${adjust === 'BUY' ? 'btn-buy' : 'btn-sell'}`}
-                          disabled={adjust === 'BUY' && !affordAny}
-                          onClick={() =>
-                            adjust === 'BUY' ? onBuy(s.id, 'target') : onSell(s.id, 'target')
-                          }
-                        >
-                          Adjust to target
-                        </button>
+                        <span className="text-[15px] font-semibold">
+                          {fmtShares(r.target.goal)} sh
+                        </span>
+                        <span className="mt-2 block text-[13px] text-ink-soft">
+                          Held and counted, never traded here.
+                        </span>
                       </>
+                    ) : (
+                      <Destination
+                        shares={r.target.goal}
+                        caption={
+                          r.target.isLot
+                            ? 'the nearest lot, inside the band'
+                            : r.lots
+                              ? 'raw, no lot fits the band'
+                              : 'raw, no lot rule here'
+                        }
+                        badge={
+                          <span
+                            className={`badge ${
+                              r.target.isLot ? 'bg-buy-soft text-buy' : 'bg-warn-soft text-warn'
+                            }`}
+                          >
+                            {r.target.isLot ? 'LOT' : 'raw'}
+                          </span>
+                        }
+                        price={s.price}
+                        held={s.shares}
+                        canTrade={canTrade}
+                        affordable={r.canAfford}
+                        cash={portfolio.cash}
+                        onGo={() =>
+                          r.target.goal > s.shares
+                            ? onBuy(s.id, 'target')
+                            : onSell(s.id, 'target')
+                        }
+                        goLabel="Adjust to target"
+                      />
                     )}
                   </td>
 
-                  {/* ---- the raw room: no lot preference, the honest maximum ----
-
-                       These three fold out of the table below `wide` and reappear in the strip
-                       beneath this row. Same figures, same buttons, laid across instead of down. */}
-                  <td className={`td ${RAW_COLUMN}`}>
-                    <span className="text-[15px] font-semibold text-buy">
-                      {fmtShares(rawBuy.maxBuy)} sh
-                    </span>
-                    <span className="sub">{money(rawBuy.maxBuy * s.price)}</span>
-                    {/* The header names the band, so say plainly when it was the cash that bound it. */}
-                    <span className="sub">
-                      {rawBuy.limiter === 'band'
-                        ? `to the ${s.bandMax}% ceiling`
-                        : 'capped by cash, not the band'}
-                    </span>
-                    {canTrade && (
-                      <button
-                        className="btn-buy mt-2"
-                        disabled={rawBuy.maxBuy <= 0}
-                        onClick={() => onBuy(s.id, 'rawmax')}
-                      >
-                        Buy this raw max
-                      </button>
-                    )}
+                  {/* ---- 5. the raw floor, and selling down to it ---- */}
+                  <td className={`td ${FOLD}`}>
+                    <Destination
+                      shares={r.minShares}
+                      caption={`the ${s.bandMin}% floor`}
+                      price={s.price}
+                      held={s.shares}
+                      canTrade={canTrade}
+                      tone="sell"
+                      onGo={() => onSell(s.id, 'rawmax')}
+                      goLabel="Sell to the floor"
+                    />
                   </td>
 
-                  <td className={`td ${RAW_COLUMN}`}>
-                    <span className="text-ink-soft">{fmtShares(rawBuy.cashAfford)} sh</span>
+                  {/* ---- 6. the lowest lot that still clears the floor ---- */}
+                  <td className="td">
+                    <Destination
+                      shares={r.lowerLot}
+                      caption={`lot above the ${s.bandMin}% floor`}
+                      price={s.price}
+                      held={s.shares}
+                      canTrade={canTrade}
+                      onGo={() => onSell(s.id, 'lowlot')}
+                      goLabel="Sell to lowest lot"
+                    />
+                  </td>
+
+                  {/* ---- 7. the raw ceiling, and buying up to it ---- */}
+                  <td className={`td ${FOLD}`}>
+                    <Destination
+                      shares={r.maxShares}
+                      caption={
+                        rawBuy.limiter === 'band'
+                          ? `the ${s.bandMax}% ceiling`
+                          : 'capped by cash, not the band'
+                      }
+                      price={s.price}
+                      held={s.shares}
+                      canTrade={canTrade}
+                      tone="buy"
+                      affordable={r.canAfford}
+                      cash={portfolio.cash}
+                      onGo={() => onBuy(s.id, 'rawmax')}
+                      goLabel="Buy to the ceiling"
+                    />
+                  </td>
+
+                  {/* ---- 8. the highest lot that still clears the ceiling ---- */}
+                  <td className="td">
+                    <Destination
+                      shares={r.upperLot}
+                      caption={`lot below the ${s.bandMax}% ceiling`}
+                      price={s.price}
+                      held={s.shares}
+                      canTrade={canTrade}
+                      affordable={r.canAfford}
+                      cash={portfolio.cash}
+                      onGo={() => onBuy(s.id, 'highlot')}
+                      goLabel="Buy to highest lot"
+                    />
+                  </td>
+
+                  {/* ---- 9. what the idle cash could pay for ---- */}
+                  <td className={`td ${FOLD}`}>
+                    <span className="text-ink-soft">{fmtShares(r.canAfford)} sh</span>
                     <span className="sub">
                       {money(portfolio.cash)} / {money(s.price)}
                     </span>
                   </td>
 
-                  <td className={`td ${RAW_COLUMN}`}>
-                    <span className="text-[15px] font-semibold text-sell">
-                      {fmtShares(rawSell.maxSell)} sh
-                    </span>
-                    <span className="sub">{money(rawSell.maxSell * s.price)}</span>
-                    <span className="sub">to the {s.bandMin}% floor</span>
-                    {canTrade && (
-                      <button
-                        className="btn-sell mt-2"
-                        disabled={rawSell.maxSell <= 0}
-                        onClick={() => onSell(s.id, 'rawmax')}
-                      >
-                        Sell this raw max
-                      </button>
-                    )}
-                  </td>
-
-                  {/* ---- the advisor's own number, and the way to shut the row ---- */}
+                  {/* ---- 10. the advisor's own number, and the way to shut the row ---- */}
                   <td className="td">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
@@ -649,7 +633,11 @@ export default function LotAwareTable({
                           <WhatIfCell portfolio={portfolio} stock={s} onTrade={onTradeTo} />
                         )}
                       </div>
-                      <RowToggle label={s.sym} open onToggle={() => collapse.toggle(s.id, settled)} />
+                      <RowToggle
+                        label={s.sym}
+                        open
+                        onToggle={() => collapse.toggle(s.id, settled)}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -660,9 +648,11 @@ export default function LotAwareTable({
                 <tr className={`${stripe} ${breach} wide:hidden`}>
                   {/* Not `.td`: the strip carries its own padding, and the border here is the one
                       the row above gave up so the pair reads as a single record. */}
-                  <td className="border-b border-line-soft" colSpan={9}>
-                    <RawRoomStrip
+                  <td className="border-b border-line-soft" colSpan={10}>
+                    <BandStrip
                       stock={s}
+                      minShares={r.minShares}
+                      maxShares={r.maxShares}
                       rawBuy={rawBuy}
                       rawSell={rawSell}
                       cash={portfolio.cash}

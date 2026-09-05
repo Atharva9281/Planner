@@ -132,6 +132,16 @@
     .row-with-strip > .td {
       border-bottom: 0;
     }
+
+    /* Seven columns below the breakpoint where there were six, because each band edge now has
+       its own lot beside it. Trimming a third off the horizontal cell padding buys back roughly
+       fifty pixels across the row — the difference between fitting a 1024px window and pushing
+       the whole page sideways. */
+    .table-stick .td,
+    .table-stick .th {
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+    }
   }
 
   .badge {

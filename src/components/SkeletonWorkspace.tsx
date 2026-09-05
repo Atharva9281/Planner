@@ -23,14 +23,15 @@ const GHOST_ROWS = 7;
  * anybody is watching.
  */
 const COLUMNS: { label: string; raw?: true }[] = [
-  { label: 'Stock · target' },
-  { label: 'Toward the floor' },
-  { label: 'Holding now' },
-  { label: 'Toward the ceiling' },
-  { label: 'Lot-aware target' },
-  { label: 'Room to the ceiling', raw: true },
-  { label: 'Shares cash affords', raw: true },
-  { label: 'Room to the floor', raw: true },
+  { label: 'Ticker' },
+  { label: 'Current holdings' },
+  { label: 'Target holdings' },
+  { label: 'Lot closest to target' },
+  { label: 'Lower band', raw: true },
+  { label: 'Lot closest to lower band' },
+  { label: 'Upper band', raw: true },
+  { label: 'Lot closest to upper band' },
+  { label: 'Shares with current cash', raw: true },
   { label: 'Buy or sell' },
 ];
 

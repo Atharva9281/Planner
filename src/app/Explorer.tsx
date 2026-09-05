@@ -280,7 +280,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
 
           <div className="mb-4">
             <Panel
-              title="Every position, lot-aware and raw, in one row"
+              title="Every position, as share counts it could hold"
               summary={
                 pending === 0
                   ? `${portfolio.stocks.length} positions · all at target`
@@ -288,9 +288,11 @@ export default function Explorer({ slot }: { slot: Slot }) {
               }
               description={
                 <p className="mt-2 max-w-[72rem] text-[13.5px] leading-relaxed text-ink-soft">
-                  The lot-aware answer and the raw maximum for the same position, side by side.
-                  A position inside its band and already at target starts collapsed, so the height
-                  goes where the decisions are. Every row opens and shuts on its own chevron.
+                  Read left to right: what is held, what the model asks for, the nearest lot to it,
+                  then each band edge with the nearest lot inside it. Every column is a holding the
+                  position could end at, so the whole row speaks one unit. A position inside its
+                  band and already at target starts collapsed, so the height goes where the
+                  decisions are.
                 </p>
               }
               actions={<CollapseAll collapse={rowState} />}
