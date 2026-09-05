@@ -16,11 +16,11 @@ import { ParsedImport } from '@/lib/import/types';
 const GHOST_ROWS = 7;
 
 /*
- * The real table's nine columns, in its order, with the three that fold below `wide` marked so
- * the ghost folds with them. This list and the tiles below have to track LotAwareTable and
- * CashStatus exactly: the whole point of the skeleton is that nothing moves when the files land,
- * and a ghost that shows six columns where the real table shows nine breaks it at the one moment
- * anybody is watching.
+ * The real table's ten columns, in its order, with the three that fold below `wide` marked so the
+ * ghost folds with them. This list, the title above it and the tiles below all have to track
+ * LotAwareTable, Explorer and CashStatus exactly: the whole point of the skeleton is that nothing
+ * moves when the files land, and a ghost carrying the wrong columns or an older heading breaks it
+ * at the one moment anybody is watching. It has drifted twice already.
  */
 const COLUMNS: { label: string; raw?: true }[] = [
   { label: 'Ticker' },
@@ -31,7 +31,7 @@ const COLUMNS: { label: string; raw?: true }[] = [
   { label: 'Lot closest to lower band' },
   { label: 'Upper band', raw: true },
   { label: 'Lot closest to upper band' },
-  { label: 'Shares with current cash', raw: true },
+  { label: 'Cash buys', raw: true },
   { label: 'Buy or sell' },
 ];
 
@@ -71,7 +71,7 @@ export default function SkeletonWorkspace({
       {/* ---- the table, drawn but empty, with the upload panel inside it ---- */}
       <section className="panel overflow-hidden">
         <div className="px-4 pt-4 pb-3">
-          <h2 className="panel-title">Every position, lot-aware and raw, in one row</h2>
+          <h2 className="panel-title">Every position, as share counts it could hold</h2>
         </div>
 
         <div className="relative">

@@ -265,7 +265,7 @@ function BandStrip({
           </span>
         </StripFigure>
 
-        <StripFigure label="Shares with current cash">
+        <StripFigure label="Cash buys">
           <span className="text-[15px] text-ink-soft">{fmtShares(rawBuy.cashAfford)} sh</span>
           <span className="font-mono text-[12px] text-ink-soft">
             {money(cash)} / {money(stock.price)}
@@ -308,7 +308,10 @@ export default function LotAwareTable({
             <th className="th">Lot closest to lower band</th>
             <th className={`th ${FOLD}`}>Upper band</th>
             <th className="th">Lot closest to upper band</th>
-            <th className={`th ${FOLD}`}>Shares with current cash</th>
+            {/* "Shares with current cash" wrapped to four lines, and since every header shares
+                one row that single label set the height of the whole bar. The sub-line under the
+                figure spells the arithmetic out anyway. */}
+            <th className={`th ${FOLD}`}>Cash buys</th>
             <th className="th th-lead rounded-tr-lg">Buy or sell</th>
           </tr>
         </thead>
