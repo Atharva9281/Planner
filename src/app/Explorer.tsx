@@ -124,34 +124,43 @@ export default function Explorer({ slot }: { slot: Slot }) {
 
   /* Trades read the stock out of the state being updated, never a captured copy, so a rapid
      double click cannot price its second trade off the pre-first-click portfolio. */
-  const handleBuy = (stockId: string, mode: BuyMode) =>
+  const handleBuy = (stockId: string, mode: BuyMode) => {
+    /* Acting on a row keeps it open. The trade is what makes the row settled, and a settled row
+       folds by default — so without this the row shut itself under the click that had just been
+       made on it. */
+    rowState.pin(stockId);
     setState((cur) => {
       const stock = cur.portfolio.stocks.find((s) => s.id === stockId);
       if (!stock) return cur;
       const plan = planBuy(cur.portfolio, stock, mode);
       return plan ? applyTrade(cur, plan) : cur;
     });
+  };
 
-  const handleSell = (stockId: string, mode: SellMode) =>
+  const handleSell = (stockId: string, mode: SellMode) => {
+    rowState.pin(stockId);
     setState((cur) => {
       const stock = cur.portfolio.stocks.find((s) => s.id === stockId);
       if (!stock) return cur;
       const plan = planSell(cur.portfolio, stock, mode);
       return plan ? applyTrade(cur, plan) : cur;
     });
+  };
 
   const closeImport = () => {
     setOpenModal(null);
     setPendingImport(null);
   };
 
-  const handleTradeTo = (stockId: string, targetShares: number) =>
+  const handleTradeTo = (stockId: string, targetShares: number) => {
+    rowState.pin(stockId);
     setState((cur) => {
       const stock = cur.portfolio.stocks.find((s) => s.id === stockId);
       if (!stock) return cur;
       const plan = planToShares(cur.portfolio, stock, targetShares);
       return plan ? applyTrade(cur, plan) : cur;
     });
+  };
 
   const openModelWithNewStock = () => {
     setState(addStock);

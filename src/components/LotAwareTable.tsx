@@ -123,6 +123,14 @@ function Destination({
   affordable?: number;
   cash?: number;
 }) {
+  /*
+   * The button is always drawn, and disabled when there is nothing to do.
+   *
+   * A missing button leaves a hole in the line the others make, which is the whole thing the
+   * bottom-alignment was for. It also reads as an oversight rather than an answer: a greyed
+   * button with "Already holding 600 shares" on hover says the action exists and why it is
+   * unavailable, where an empty cell says nothing at all.
+   */
   if (shares === null) {
     return (
       <div className="cell-inner">
@@ -130,6 +138,17 @@ function Destination({
           <span className="sub !mt-0">{caption}</span>
           <span className="badge mt-2 bg-warn-soft text-warn">no lot here</span>
         </div>
+        {canTrade && onGo && (
+          <div className="cell-action">
+            <button
+              className="btn-ghost"
+              disabled
+              title="There is no round lot on this side of the band to trade to."
+            >
+              Trade
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -169,13 +188,21 @@ function Destination({
           the colour says buy or sell — so spelling all three out again on the button only made
           seven buttons of seven different widths. `goLabel` survives as the accessible name, so
           a screen reader still hears "Trade to the lowest lot" rather than one of seven "Trade". */}
-      {action !== null && canTrade && onGo && (
+      {canTrade && onGo && (
         <div className="cell-action">
           <button
-            className={action === 'BUY' ? 'btn-buy' : 'btn-sell'}
-            disabled={action === 'BUY' && affordable !== undefined && affordable <= 0}
+            className={
+              action === null ? 'btn-ghost' : action === 'BUY' ? 'btn-buy' : 'btn-sell'
+            }
+            disabled={
+              action === null || (action === 'BUY' && affordable !== undefined && affordable <= 0)
+            }
             aria-label={goLabel}
-            title={goLabel}
+            title={
+              action === null
+                ? `Already holding ${fmtShares(shares)} shares.`
+                : goLabel
+            }
             onClick={onGo}
           >
             Trade
