@@ -129,10 +129,12 @@ function Destination({
 }) {
   if (shares === null) {
     return (
-      <>
-        <span className="sub !mt-0">{caption}</span>
-        <span className="badge mt-2 bg-warn-soft text-warn">no lot here</span>
-      </>
+      <div className="cell-inner">
+        <div>
+          <span className="sub !mt-0">{caption}</span>
+          <span className="badge mt-2 bg-warn-soft text-warn">no lot here</span>
+        </div>
+      </div>
     );
   }
 
@@ -140,38 +142,45 @@ function Destination({
   const action = delta > 0 ? 'BUY' : delta < 0 ? 'SELL' : null;
   const short = action === 'BUY' && affordable !== undefined && affordable < delta;
 
+  /* The figures sit at the top of the cell and the button at the bottom of it, so every button
+     across the row lands on one line however much text is above it. */
   return (
-    <>
-      <span
-        className={`text-[15px] font-semibold ${
-          tone === 'buy' ? 'text-buy' : tone === 'sell' ? 'text-sell' : ''
-        }`}
-      >
-        {fmtShares(shares)} sh
-      </span>{' '}
-      {badge}
-      <span className="sub">{caption}</span>
+    <div className="cell-inner">
+      <div>
+        <span
+          className={`text-[15px] font-semibold ${
+            tone === 'buy' ? 'text-buy' : tone === 'sell' ? 'text-sell' : ''
+          }`}
+        >
+          {fmtShares(shares)} sh
+        </span>{' '}
+        {badge}
+        <span className="sub">{caption}</span>
 
-      {action === null ? (
-        <span className="mt-2 block text-ink-soft">already here</span>
-      ) : (
-        <>
-          <Move action={action} n={Math.abs(delta)} price={price} />
-          {short && cash !== undefined && (
-            <span className="sub text-warn">only {fmtShares(affordable!)} sh affordable now</span>
-          )}
-          {canTrade && onGo && (
-            <button
-              className={`mt-2 ${action === 'BUY' ? 'btn-buy' : 'btn-sell'}`}
-              disabled={action === 'BUY' && affordable !== undefined && affordable <= 0}
-              onClick={onGo}
-            >
-              {goLabel}
-            </button>
-          )}
-        </>
+        {action === null ? (
+          <span className="mt-2 block text-ink-soft">already here</span>
+        ) : (
+          <>
+            <Move action={action} n={Math.abs(delta)} price={price} />
+            {short && cash !== undefined && (
+              <span className="sub text-warn">only {fmtShares(affordable!)} sh affordable now</span>
+            )}
+          </>
+        )}
+      </div>
+
+      {action !== null && canTrade && onGo && (
+        <div className="cell-action">
+          <button
+            className={action === 'BUY' ? 'btn-buy' : 'btn-sell'}
+            disabled={action === 'BUY' && affordable !== undefined && affordable <= 0}
+            onClick={onGo}
+          >
+            {goLabel}
+          </button>
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -203,36 +212,40 @@ function SpendTheCash({
   const breaches = landing > maxShares;
 
   return (
-    <>
-      <span className="text-[15px] font-semibold">{fmtShares(affordable)} sh</span>
-      <span className="sub">
-        {money(cash)} / {money(stock.price)}
-      </span>
+    <div className="cell-inner">
+      <div>
+        <span className="text-[15px] font-semibold">{fmtShares(affordable)} sh</span>
+        <span className="sub">
+          {money(cash)} / {money(stock.price)}
+        </span>
+        {affordable > 0 && (
+          <>
+            <span className="sub">would hold {fmtShares(landing)} sh</span>
+            {breaches && (
+              <span className="sub font-semibold text-sell">
+                past the {stock.bandMax}% ceiling of {fmtShares(maxShares)} sh
+              </span>
+            )}
+          </>
+        )}
+      </div>
 
-      {affordable > 0 && (
-        <>
-          <span className="sub">would hold {fmtShares(landing)} sh</span>
-          {breaches && (
-            <span className="sub font-semibold text-sell">
-              past the {stock.bandMax}% ceiling of {fmtShares(maxShares)} sh
-            </span>
-          )}
-          {canTrade && (
-            <button
-              className={`mt-2 ${breaches ? 'btn-sell' : 'btn-buy'}`}
-              title={
-                breaches
-                  ? 'Buys every share the cash affords, which takes this position outside its own band.'
-                  : 'Buys every share the cash affords.'
-              }
-              onClick={onGo}
-            >
-              Spend the cash
-            </button>
-          )}
-        </>
+      {affordable > 0 && canTrade && (
+        <div className="cell-action">
+          <button
+            className={breaches ? 'btn-sell' : 'btn-buy'}
+            title={
+              breaches
+                ? 'Buys every share the cash affords, which takes this position outside its own band.'
+                : 'Buys every share the cash affords.'
+            }
+            onClick={onGo}
+          >
+            Spend the cash
+          </button>
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -548,27 +561,35 @@ export default function LotAwareTable({
               <Fragment key={s.id}>
                 <tr className={`${stripe} ${breach} row-with-strip`}>
                   {/* ---- 1. identity, the mandate, and the row-level undo ---- */}
-                  <td className="td">
-                    <span className="font-sans text-[15px] font-bold">{s.sym}</span>
-                    <span className="sub">{money(s.price)}</span>
-                    <div className="mt-2 font-sans text-[13.5px] font-semibold">
-                      {s.target}% target
+                  <td className="td cell-fill">
+                    <div className="cell-inner">
+                      <div>
+                        <span className="font-sans text-[15px] font-bold">{s.sym}</span>
+                        <span className="sub">{money(s.price)}</span>
+                        <div className="mt-2 font-sans text-[13.5px] font-semibold">
+                          {s.target}% target
+                        </div>
+                        <span className="sub">
+                          band {s.bandMin}&ndash;{s.bandMax}%
+                        </span>
+                        {!canTrade && (
+                          <span className="badge mt-1.5 bg-accent-soft text-accent">
+                            held, not traded
+                          </span>
+                        )}
+                      </div>
+                      {/* Reset joins the line the trade buttons make, rather than floating at
+                          whatever height this cell's text happens to end. */}
+                      <div className="cell-action">
+                        <button
+                          className="btn-ghost"
+                          disabled={!resettable.has(s.id)}
+                          onClick={() => onResetStock(s.id)}
+                        >
+                          Reset
+                        </button>
+                      </div>
                     </div>
-                    <span className="sub">
-                      band {s.bandMin}&ndash;{s.bandMax}%
-                    </span>
-                    {!canTrade && (
-                      <span className="badge mt-1.5 bg-accent-soft text-accent">
-                        held, not traded
-                      </span>
-                    )}
-                    <button
-                      className="btn-ghost mt-2.5 block"
-                      disabled={!resettable.has(s.id)}
-                      onClick={() => onResetStock(s.id)}
-                    >
-                      Reset
-                    </button>
                   </td>
 
                   {/* ---- 2. where it actually sits ---- */}
@@ -599,7 +620,7 @@ export default function LotAwareTable({
                        exactly rather than on the nearest lot, which is the more faithful trade
                        and the less tidy one — the column beside it holds the lot-aware answer,
                        and the two are one click apart on purpose. */}
-                  <td className="td">
+                  <td className="td cell-fill">
                     <Destination
                       shares={r.targetShares}
                       caption={`${s.target}% of the account, raw = ${r.target.raw.toFixed(1)}`}
@@ -614,16 +635,18 @@ export default function LotAwareTable({
                   </td>
 
                   {/* ---- 4. the lot-aware answer, and the one move that reaches it ---- */}
-                  <td className="td">
+                  <td className="td cell-fill">
                     {!canTrade ? (
-                      <>
-                        <span className="text-[15px] font-semibold">
-                          {fmtShares(r.target.goal)} sh
-                        </span>
-                        <span className="mt-2 block text-[13px] text-ink-soft">
-                          Held and counted, never traded here.
-                        </span>
-                      </>
+                      <div className="cell-inner">
+                        <div>
+                          <span className="text-[15px] font-semibold">
+                            {fmtShares(r.target.goal)} sh
+                          </span>
+                          <span className="mt-2 block text-[13px] text-ink-soft">
+                            Held and counted, never traded here.
+                          </span>
+                        </div>
+                      </div>
                     ) : (
                       <Destination
                         shares={r.target.goal}
@@ -659,7 +682,7 @@ export default function LotAwareTable({
                   </td>
 
                   {/* ---- 5. the raw floor, and selling down to it ---- */}
-                  <td className={`td ${FOLD}`}>
+                  <td className={`td cell-fill ${FOLD}`}>
                     <Destination
                       shares={r.minShares}
                       caption={`the ${s.bandMin}% floor`}
@@ -673,7 +696,7 @@ export default function LotAwareTable({
                   </td>
 
                   {/* ---- 6. the lowest lot that still clears the floor ---- */}
-                  <td className="td">
+                  <td className="td cell-fill">
                     <Destination
                       shares={r.lowerLot}
                       caption={`lot above the ${s.bandMin}% floor`}
@@ -686,7 +709,7 @@ export default function LotAwareTable({
                   </td>
 
                   {/* ---- 7. the raw ceiling, and buying up to it ---- */}
-                  <td className={`td ${FOLD}`}>
+                  <td className={`td cell-fill ${FOLD}`}>
                     <Destination
                       shares={r.maxShares}
                       caption={
@@ -706,7 +729,7 @@ export default function LotAwareTable({
                   </td>
 
                   {/* ---- 8. the highest lot that still clears the ceiling ---- */}
-                  <td className="td">
+                  <td className="td cell-fill">
                     <Destination
                       shares={r.upperLot}
                       caption={`lot below the ${s.bandMax}% ceiling`}
@@ -721,7 +744,7 @@ export default function LotAwareTable({
                   </td>
 
                   {/* ---- 9. what the idle cash could pay for ---- */}
-                  <td className={`td ${FOLD}`}>
+                  <td className={`td cell-fill ${FOLD}`}>
                     <SpendTheCash
                       stock={s}
                       affordable={r.canAfford}

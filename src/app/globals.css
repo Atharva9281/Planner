@@ -124,6 +124,42 @@
   }
 
   /*
+   * Buttons inside a table may wrap; everywhere else they may not.
+   *
+   * A button's label is the widest unbreakable thing in most of these columns, so `nowrap` puts
+   * a floor of about 130px under each one. Ten of those do not fit a 1512px window — measured 38px
+   * of overflow, and 110px at 1440. Letting them wrap drops each column's floor to its longest
+   * single word, and costs nothing at full width because a column with room never wraps.
+   */
+  .table-stick button {
+    white-space: normal;
+  }
+
+  /*
+   * Bottom-aligns the button in a cell, so a row of them reads as one line rather than a
+   * staircase. Each cell carries a different amount of text above its button, which is what put
+   * them at seven different heights.
+   *
+   * The 1px height is the part that looks wrong and is not: a table cell never honours a height
+   * smaller than its content, but declaring one is what lets the child's `height: 100%` resolve
+   * against the row's real height instead of collapsing to nothing.
+   */
+  .cell-fill {
+    height: 1px;
+  }
+
+  .cell-fill > .cell-inner {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+  }
+
+  .cell-inner > .cell-action {
+    margin-top: auto;
+    padding-top: 0.5rem;
+  }
+
+  /*
    * Below `wide` the raw-room columns leave the header and reappear as a strip under the row they
    * belong to. The row and its strip are one record, so the rule between them is dropped and only
    * the strip carries a bottom border — otherwise every position reads as two.
