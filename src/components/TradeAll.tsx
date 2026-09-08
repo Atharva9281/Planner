@@ -78,9 +78,11 @@ export function TradeAllButtons({
  *
  * Two things it has to be honest about. The counts are positions the button did *not* move — a
  * row left alone because it has no lot rule reads as a bug unless the line says otherwise. And
- * the cash, which these buttons will knowingly run negative: the shortfall is stated in dollars,
- * because that figure is the advisor's next decision. It is what he has to raise, and the whole
- * reason the tool does not raise it for him is that only he knows which holding should go.
+ * the cash, which these buttons will knowingly run negative.
+ *
+ * A shortfall is shown the way every ledger shows one — a minus sign and red — rather than as a
+ * sentence telling the advisor to go and sell something. He can read a negative balance, and the
+ * instruction was both obvious and slightly patronising.
  */
 export function TradeAllResult({
   outcome,
@@ -118,8 +120,8 @@ export function TradeAllResult({
           {notes.length > 0 && ` · ${notes.join(' · ')}`}
         </span>
         {short ? (
-          <span className="ml-2 font-semibold text-warn">
-            Cash is short {money(Math.abs(outcome.cashAfter))}. Sell to raise it.
+          <span className="ml-2 font-semibold text-sell">
+            Cash <span className="font-mono tabular-nums">{money(outcome.cashAfter)}</span>
           </span>
         ) : (
           outcome.belowCashFloor && (

@@ -62,6 +62,8 @@ export default function StuckHeader({
   const total = totalValue(portfolio);
   const cp = cashPct(portfolio);
   const status = cashStatus(portfolio);
+  // Amber is a band breach; red is an overdraft. Same rule as the tile it stands in for.
+  const short = portfolio.cash < 0;
   const isSample = source?.kind === 'sample';
 
   const divider = <span className="text-line-soft select-none">&#124;</span>;
@@ -86,19 +88,25 @@ export default function StuckHeader({
 
           <span
             className={`font-mono text-[16px] font-semibold tabular-nums ${
-              status === 'ok' ? 'text-buy' : 'text-warn'
+              short ? 'text-sell' : status === 'ok' ? 'text-buy' : 'text-warn'
             }`}
           >
             {money(portfolio.cash)}
           </span>
           <span
             className={`font-mono text-[13.5px] tabular-nums ${
-              status === 'ok' ? 'text-ink-soft' : 'font-semibold text-warn'
+              short
+                ? 'font-semibold text-sell'
+                : status === 'ok'
+                  ? 'text-ink-soft'
+                  : 'font-semibold text-warn'
             }`}
           >
             {pct(cp)}
           </span>
-          <span className={status === 'ok' ? caption : `${caption} text-warn`}>
+          <span
+            className={short ? `${caption} text-sell` : status === 'ok' ? caption : `${caption} text-warn`}
+          >
             cash
             {status === 'above' && ' · above the band'}
             {status === 'below' && ' · below the band'}
