@@ -49,7 +49,11 @@ export function carryModel(state: ExplorerState): CarriedModel | undefined {
       },
     },
     prices,
-    from: source?.label || 'the account just closed',
+    /* Names the account, and only the account. `source.label` falls back to the model name when
+       the holdings file carried no account name, which turned the slot into "Carried over from
+       <model>" — circular, and no help in telling one account from another. */
+    from:
+      source?.label && source.label !== source.modelName ? source.label : 'the account just closed',
   };
 }
 

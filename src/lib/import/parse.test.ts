@@ -591,6 +591,16 @@ describe('one model, several accounts', () => {
     expect(importIssues(parsed, baseResolution()).unpriced).toContain('AMAT');
   });
 
+  it('names the account it came from, never the model', () => {
+    const carried = carryModel(loaded())!;
+    expect(carried.from).toBe('John and Jane Doe');
+
+    /* A holdings export with no account name leaves `source.label` falling back to the model
+       name, and "carried over from <the model>" says nothing about which account it was. */
+    const noName = applyImport(parseSheets([modelSheet()]), baseResolution());
+    expect(carryModel(noName)!.from).toBe('the account just closed');
+  });
+
   it('is not offered when a hand-entered price would be the only thing carried', () => {
     // Nothing loaded at all: there is no model to reuse and no prices to seed from.
     expect(carryModel(applyImport(parseSheets([]), baseResolution()))).toBeUndefined();
