@@ -320,15 +320,6 @@ export default function Explorer({ slot }: { slot: Slot }) {
                   ? `${portfolio.stocks.length} positions · all at target`
                   : `${portfolio.stocks.length} positions · ${pending} needing a decision`
               }
-              description={
-                <p className="mt-2 max-w-[72rem] text-[13.5px] leading-relaxed text-ink-soft">
-                  Read left to right: what is held, what the model asks for, the nearest lot to it,
-                  then each band edge with the nearest lot inside it. Every column is a holding the
-                  position could end at, so the whole row speaks one unit. A position inside its
-                  band and already at target starts collapsed, so the height goes where the
-                  decisions are.
-                </p>
-              }
               actions={
                 <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
                   <TradeAllButtons onTradeAll={handleTradeAll} disabled={unpriced.length > 0} />
