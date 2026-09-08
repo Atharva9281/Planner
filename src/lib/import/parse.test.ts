@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { likelyFunds, num, offModelSymbols, parseSheets, unpricedSymbols } from './parse';
 import { applyImport, importIssues } from './apply';
-import { Resolution, SheetGrid } from './types';
+import { carriedAsImport, carryModel } from './carry';
+import { ParsedImport, Resolution, SheetGrid } from './types';
 import { lotAwareTarget, mandatoryStatus, needsDecision, planToTarget, totalValue } from '../engine';
 
 /* ------------------------------------------------------------------ */
@@ -493,5 +494,106 @@ describe('sheets that are not recognised', () => {
     expect(parsed.sheets).toEqual([{ name: 'Notes', read: 'skipped', rows: 0 }]);
     expect(parsed.models).toHaveLength(0);
     expect(parsed.holdings).toBeUndefined();
+  });
+});
+
+describe('one model, several accounts', () => {
+  /* The CFP's own case: the same model covers a number of accounts, and re-uploading the model
+     export for each of them is work with no decision in it. Closing an account keeps its model
+     and only the next account's holdings export is needed. */
+
+  /** A second account on the same model: holds AAPL, which the first account never did. */
+  const otherAccountSheet = (): SheetGrid => ({
+    name: 'Sheet1',
+    rows: [
+      ['Account Name', 'Miller Family Trust'],
+      [
+        'Location',
+        'Symbol / CUSIP / ID',
+        'Description / Fund',
+        'Asset Class',
+        'Quantity',
+        'Price / NAV',
+        'Market Value',
+        'Percent of Account Holdings',
+      ],
+      ['LPL', '9999136', 'Deposit Cash Account', 'Cash and Equiv', 50000, 1, 50000, 0.25],
+      ['LPL', 'AAPL', 'Apple Inc', 'Stocks / ETFs Sleeve', 400, 250.5, 100200, 0.5],
+    ],
+  });
+
+  const loaded = () => applyImport(parseSheets([modelSheet(), holdingsSheet()]), baseResolution());
+
+  it('carries every model row, its bands and its cash band to the next account', () => {
+    const carried = carryModel(loaded())!;
+    const next = applyImport(carriedAsImport(carried), baseResolution());
+
+    const before = loaded().portfolio;
+    expect(next.portfolio.stocks.map((s) => s.sym)).toEqual(before.stocks.map((s) => s.sym));
+    for (const s of next.portfolio.stocks) {
+      const was = before.stocks.find((x) => x.sym === s.sym)!;
+      expect([s.target, s.bandMin, s.bandMax]).toEqual([was.target, was.bandMin, was.bandMax]);
+    }
+    expect(next.portfolio.cashFloor).toBe(before.cashFloor);
+    expect(next.portfolio.cashCeiling).toBe(before.cashCeiling);
+  });
+
+  it('keeps fixed income held-only and the funds off the lot rule', () => {
+    /* These were settled by asset class when the model was first read. Re-deriving them from a
+       Type string the advisor can edit would let a rename turn a bond fund into something the
+       tool will trade. */
+    const carried = carryModel(loaded())!;
+    const next = applyImport(carriedAsImport(carried), baseResolution());
+
+    const bond = next.portfolio.stocks.find((s) => s.sym === 'MGSMX')!;
+    expect(bond.tradeable).toBe(false);
+    expect(bond.lotRounding).toBe(false);
+    expect(next.portfolio.stocks.find((s) => s.sym === 'QQQ')!.tradeable).toBe(true);
+  });
+
+  it('takes share counts and cash from the new account, never the old one', () => {
+    const carried = carryModel(loaded())!;
+    const parsed: ParsedImport = {
+      ...carriedAsImport(carried),
+      holdings: parseSheets([otherAccountSheet()]).holdings,
+    };
+    const next = applyImport(parsed, baseResolution({ prices: carried.prices }));
+
+    expect(next.portfolio.cash).toBe(50000);
+    expect(next.portfolio.stocks.find((s) => s.sym === 'AAPL')!.shares).toBe(400);
+    // AMAT and HWM belonged to the account just closed. This one holds neither.
+    expect(next.portfolio.stocks.find((s) => s.sym === 'AMAT')!.shares).toBe(0);
+    expect(next.source?.label).toBe('Miller Family Trust');
+  });
+
+  it('prices a row the new account does not hold from the old account, and the file wins where it has one', () => {
+    const carried = carryModel(loaded())!;
+    const parsed: ParsedImport = {
+      ...carriedAsImport(carried),
+      holdings: parseSheets([otherAccountSheet()]).holdings,
+    };
+    const next = applyImport(parsed, baseResolution({ prices: carried.prices }));
+
+    // Not held here, so the carried price stands in rather than leaving the row unpriced.
+    expect(next.portfolio.stocks.find((s) => s.sym === 'AMAT')!.price).toBe(432.16);
+    // Held here, so this account's own export prices it — the carried figure never gets a look in.
+    expect(carried.prices.AAPL).toBeUndefined();
+    expect(next.portfolio.stocks.find((s) => s.sym === 'AAPL')!.price).toBe(250.5);
+
+    /* What is still asked for is exactly what neither account could price. The first account did
+       not hold these three either, so there was never a price to carry — a carried model shortens
+       the list of empty fields, it does not invent its way out of one. */
+    expect(importIssues(parsed, baseResolution({ prices: carried.prices })).unpriced).toEqual([
+      'SNDK',
+      'MGSMX',
+      'PDSZX',
+    ]);
+    // Without the carried prices it would be asking for AMAT and HWM as well.
+    expect(importIssues(parsed, baseResolution()).unpriced).toContain('AMAT');
+  });
+
+  it('is not offered when a hand-entered price would be the only thing carried', () => {
+    // Nothing loaded at all: there is no model to reuse and no prices to seed from.
+    expect(carryModel(applyImport(parseSheets([]), baseResolution()))).toBeUndefined();
   });
 });

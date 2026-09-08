@@ -6,6 +6,7 @@
 
 import { cashPct, destinationShares, offModelValue, planToLot, planToTarget } from './engine';
 import { baselineFrom, emptyState, sampleState } from './defaultState';
+import { carryModel } from './import/carry';
 import {
   Destination,
   ExplorerState,
@@ -337,9 +338,16 @@ export function loadSample(): ExplorerState {
   return sampleState();
 }
 
-/** Throws the whole portfolio away and returns to the empty first screen. */
-export function clearAll(): ExplorerState {
-  return emptyState();
+/**
+ * Throws the whole portfolio away and returns to the empty first screen — but sets the model
+ * aside on the way out, because the same model routinely covers several accounts.
+ *
+ * Only the model survives: every share count, price, trade and cash balance belonged to the
+ * account being closed and goes with it. The upload screen shows what was kept and offers to
+ * remove it, so this is a head start rather than a decision made on the advisor's behalf.
+ */
+export function clearAll(state: ExplorerState): ExplorerState {
+  return { ...emptyState(), carried: carryModel(state) };
 }
 
 /* ------------------------------------------------------------------ */

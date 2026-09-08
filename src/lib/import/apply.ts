@@ -35,10 +35,12 @@ export function applyImport(parsed: ParsedImport, resolution: Resolution): Explo
     bandMin: row.bandMin,
     bandMax: row.bandMax,
     shares: sharesOf.get(row.sym) ?? 0,
-    // The model's own Type decides both of these, so nothing is asked at import time: fixed
-    // income is held rather than traded, and a lot means nothing to something bought in dollars.
-    tradeable: classify(row.type ?? '') === 'tradeable',
-    lotRounding: classify(row.type ?? '') === 'tradeable',
+    /* The model's own Type decides both of these, so nothing is asked at import time: fixed
+       income is held rather than traded, and a lot means nothing to something bought in dollars.
+       A model carried over from the previous account brings both flags already settled, and those
+       win — see the note on `ModelRow.tradeable`. */
+    tradeable: row.tradeable ?? classify(row.type ?? '') === 'tradeable',
+    lotRounding: row.lotRounding ?? classify(row.type ?? '') === 'tradeable',
   }));
 
   // Anything held that the model has no row for, kept as an off-model holding so it still counts
@@ -77,6 +79,9 @@ export function applyImport(parsed: ParsedImport, resolution: Resolution): Explo
       /* Stamped here rather than at render, because this is the moment the prices entered the
          app. Everything downstream is derived from them, so this is their age too. */
       loadedAt: new Date().toISOString(),
+      /* Kept separately because `label` is usually the account. Without it, closing this account
+         would leave nothing able to name the model it was measured against. */
+      modelName: model?.name,
     },
     log: [],
     nextId: seq,

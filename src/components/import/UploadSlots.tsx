@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { parseSheets } from '@/lib/import/parse';
 import { readWorkbook } from '@/lib/import/workbook';
-import { ParsedImport } from '@/lib/import/types';
+import { carriedAsImport } from '@/lib/import/carry';
+import { CarriedModel, ParsedImport } from '@/lib/import/types';
 import { money } from '@/lib/format';
 
 /**
@@ -11,13 +12,31 @@ import { money } from '@/lib/format';
  * carries the account — so each gets its own target and its own verdict. A single combined
  * dropzone left the advisor guessing which file had actually been understood, and put the two
  * possible failures behind one message.
+ *
+ * The model slot can arrive already filled. Closing an account keeps its model, because one model
+ * routinely covers several accounts, and the slot then shows what was kept with Replace and
+ * Remove beside it — the same two controls a file gets. Reusing the filled state rather than
+ * adding a second screen is what keeps this one decision: which files does this account need.
  */
 
 interface Slot {
-  file: File;
+  /** Absent on a model carried from the account just closed: there is no file behind it. */
+  file?: File;
   parsed: ParsedImport;
   summary: string;
+  /** The account the model was carried from, when it did not come from a file. */
+  carriedFrom?: string;
 }
+
+const fromCarried = (carried: CarriedModel): Slot => ({
+  parsed: carriedAsImport(carried),
+  summary: `${carried.model.rows.length} positions${
+    carried.model.cashBand
+      ? ` · cash band ${carried.model.cashBand.floor}–${carried.model.cashBand.ceiling}%`
+      : ''
+  }`,
+  carriedFrom: carried.from,
+});
 
 export type Kind = 'model' | 'holdings';
 
@@ -76,6 +95,7 @@ function SlotCard({
   busy,
   onFile,
   onClear,
+  onRestore,
 }: {
   kind: Kind;
   step: string;
@@ -86,6 +106,8 @@ function SlotCard({
   busy: boolean;
   onFile: (file: File) => void;
   onClear: () => void;
+  /** Offered only where a kept model was removed and could be put back. */
+  onRestore?: () => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
@@ -141,13 +163,22 @@ function SlotCard({
 
       {slot && !error ? (
         <div className="mt-3">
-          <p className="truncate font-mono text-[13px] font-semibold" title={slot.file.name}>
-            {slot.file.name}
-          </p>
+          {slot.file ? (
+            <p className="truncate font-mono text-[13px] font-semibold" title={slot.file.name}>
+              {slot.file.name}
+            </p>
+          ) : (
+            /* No file name to show, so say where it did come from. Left unsaid, a slot that
+               filled itself in looks like the last account never really closed. */
+            <p className="text-[13px] font-semibold">
+              Carried over from{' '}
+              <span className="text-ink-soft">{slot.carriedFrom}</span>
+            </p>
+          )}
           <p className="mt-0.5 font-mono text-[12.5px] text-ink-soft">{slot.summary}</p>
           <div className="mt-3 flex gap-2">
             <button className="btn-ghost" disabled={busy} onClick={() => input.current?.click()}>
-              Replace
+              {slot.file ? 'Replace' : 'Use a different model'}
             </button>
             <button className="btn-ghost hover:border-sell hover:text-sell" onClick={onClear}>
               Remove
@@ -161,16 +192,40 @@ function SlotCard({
             {busy ? 'Reading…' : `Choose the ${kind} file`}
           </button>
           <p className="mt-2 text-[12.5px] text-ink-soft">or drop it here &middot; .xlsx or .csv</p>
+          {/* Removing the kept model is one click, and without this so is losing it: the advisor
+              would be off hunting for the very export this was meant to save him. */}
+          {onRestore && (
+            <button
+              className="mt-2.5 text-[12.5px] font-semibold text-accent underline underline-offset-2 hover:text-accent-deep"
+              onClick={onRestore}
+            >
+              Put the kept model back
+            </button>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-export default function UploadSlots({ onReady }: { onReady: (parsed: ParsedImport) => void }) {
-  const [slots, setSlots] = useState<Partial<Record<Kind, Slot>>>({});
+export default function UploadSlots({
+  carried,
+  onReady,
+}: {
+  /** A model kept from the account just closed, which fills the model slot on arrival. */
+  carried?: CarriedModel;
+  onReady: (parsed: ParsedImport, carried?: CarriedModel) => void;
+}) {
+  const [slots, setSlots] = useState<Partial<Record<Kind, Slot>>>(() =>
+    carried ? { model: fromCarried(carried) } : {},
+  );
   const [errors, setErrors] = useState<Partial<Record<Kind, string>>>({});
   const [busy, setBusy] = useState<Kind | null>(null);
+
+  /* True while the model slot still holds the carried model rather than a file the advisor chose
+     here. Replacing or removing it turns this off, and with it the price seeding downstream: the
+     old account's prices have no business in an import whose model came from somewhere else. */
+  const usingCarried = Boolean(carried) && !slots.model?.file && Boolean(slots.model);
 
   const take = async (kind: Kind, file: File) => {
     setBusy(kind);
@@ -212,12 +267,24 @@ export default function UploadSlots({ onReady }: { onReady: (parsed: ParsedImpor
           kind="model"
           step="1"
           title="The model"
-          blurb="Targets and drift bands, plus the cash band. This is the mandate every position is measured against."
+          blurb={
+            usingCarried
+              ? 'The mandate from the account you just closed, kept because one model usually covers several accounts. Replace it if this account works to a different one.'
+              : 'Targets and drift bands, plus the cash band. This is the mandate every position is measured against.'
+          }
           slot={slots.model}
           error={errors.model}
           busy={busy === 'model'}
           onFile={(f) => take('model', f)}
           onClear={() => clear('model')}
+          onRestore={
+            carried && !slots.model
+              ? () => {
+                  setErrors((e) => ({ ...e, model: undefined }));
+                  setSlots((s) => ({ ...s, model: fromCarried(carried) }));
+                }
+              : undefined
+          }
         />
         <SlotCard
           kind="holdings"
@@ -236,7 +303,7 @@ export default function UploadSlots({ onReady }: { onReady: (parsed: ParsedImpor
         <button
           className="btn-solid px-6 py-3 text-[15px]"
           disabled={!slots.model}
-          onClick={() => onReady(merged())}
+          onClick={() => onReady(merged(), usingCarried ? carried : undefined)}
         >
           Review and load
         </button>
@@ -244,7 +311,9 @@ export default function UploadSlots({ onReady }: { onReady: (parsed: ParsedImpor
           {!slots.model
             ? 'The model is required — targets and bands live in it.'
             : !slots.holdings
-              ? 'Holdings are optional; without them every position starts at zero shares.'
+              ? usingCarried
+                ? 'Add this account’s holdings export, or load the model on its own and every position starts at zero shares.'
+                : 'Holdings are optional; without them every position starts at zero shares.'
               : 'Both files read. Nothing changes until you apply.'}
         </span>
       </div>

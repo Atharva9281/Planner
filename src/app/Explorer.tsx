@@ -35,7 +35,7 @@ import {
   undoLast,
   undoSize,
 } from '@/lib/actions';
-import { ParsedImport } from '@/lib/import/types';
+import { CarriedModel, ParsedImport } from '@/lib/import/types';
 import { netOrders } from '@/lib/orders';
 import { priceAge } from '@/lib/format';
 import {
@@ -68,6 +68,8 @@ export default function Explorer({ slot }: { slot: Slot }) {
   const [openModal, setOpenModal] = useState<OpenModal>(null);
   /** A parse started from the landing page, handed to the review dialog when it opens. */
   const [pendingImport, setPendingImport] = useState<ParsedImport | null>(null);
+  /** Set alongside it when the model in that parse was carried over rather than uploaded. */
+  const [pendingCarried, setPendingCarried] = useState<CarriedModel | null>(null);
   /** A pending discard, held until the advisor confirms it. Null when nothing is being asked. */
   const [confirming, setConfirming] = useState<null | 'clear'>(null);
   /** What the last press of a universal button did. Cleared by an undo, a reset, or a new press. */
@@ -160,6 +162,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
   const closeImport = () => {
     setOpenModal(null);
     setPendingImport(null);
+    setPendingCarried(null);
   };
 
   const handleTradeTo = (stockId: string, targetShares: number) =>
@@ -282,8 +285,10 @@ export default function Explorer({ slot }: { slot: Slot }) {
         <div className="min-h-[60vh]" aria-hidden />
       ) : isEmpty ? (
         <SkeletonWorkspace
-          onReady={(parsed) => {
+          carried={state.carried}
+          onReady={(parsed, carried) => {
             setPendingImport(parsed);
+            setPendingCarried(carried ?? null);
             setOpenModal('import');
           }}
           onAddStock={openModelWithNewStock}
@@ -420,6 +425,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
       {openModal === 'import' && (
         <ImportDialog
           initial={pendingImport ?? undefined}
+          carried={pendingCarried ?? undefined}
           onClose={closeImport}
           onApply={(next) => {
             setState(next);
@@ -453,9 +459,17 @@ export default function Explorer({ slot }: { slot: Slot }) {
               <p>
                 This clears {atRisk.join(' and ')}, and returns to the upload screen.
               </p>
+              {/* Said here rather than discovered on the next screen: it changes what the advisor
+                  has to go and find before pressing this. */}
+              {portfolio.stocks.length > 0 && (
+                <p className="mt-3">
+                  The model is kept, ready for the next account. You will only need that account’s
+                  holdings export.
+                </p>
+              )}
               <p className="mt-3 text-ink-soft">
-                The two exports cannot be read back automatically, so anything decided here would
-                have to be worked through again. Download the trade log first if you need it.
+                The holdings export cannot be read back automatically, so anything decided here
+                would have to be worked through again. Download the trade log first if you need it.
               </p>
             </>
           }

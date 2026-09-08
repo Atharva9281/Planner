@@ -3,7 +3,7 @@ import Modal from '../Modal';
 import { NumInput } from '../Inputs';
 import { applyImport, importIssues, pickModel } from '@/lib/import/apply';
 import { offModelSymbols, unpricedSymbols } from '@/lib/import/parse';
-import { ParsedImport, Resolution } from '@/lib/import/types';
+import { CarriedModel, ParsedImport, Resolution } from '@/lib/import/types';
 import { money } from '@/lib/format';
 import { ExplorerState } from '@/lib/types';
 
@@ -23,11 +23,14 @@ import { ExplorerState } from '@/lib/types';
  */
 export default function ImportDialog({
   initial,
+  carried,
   onClose,
   onApply,
 }: {
   /** A parse already done on the page behind, so the dialog opens straight into the review. */
   initial?: ParsedImport;
+  /** Set when the model came from the account just closed, which brings its prices with it. */
+  carried?: CarriedModel;
   onClose: () => void;
   onApply: (state: ExplorerState) => void;
 }) {
@@ -35,7 +38,15 @@ export default function ImportDialog({
   const [resolution, setResolution] = useState<Resolution>(() => ({
     modelName: initial ? pickModel(initial)?.name : undefined,
     keepOffModel: true,
+    /* The previous account's prices, seeded so the fields open filled in rather than as twenty
+       empty boxes. Harmless where this account holds the position: `applyImport` reads the
+       holdings file first and only falls back to these, so real market data still wins. */
+    prices: carried ? { ...carried.prices } : undefined,
   }));
+
+  /** Symbols whose price arrived this way, so the field can say so rather than looking typed. */
+  const carriedPrice = (sym: string) =>
+    carried !== undefined && carried.prices[sym] !== undefined;
 
   const model = parsed ? pickModel(parsed, resolution.modelName) : undefined;
   const offModel = parsed && model ? offModelSymbols(model, parsed.holdings) : [];
@@ -251,9 +262,10 @@ export default function ImportDialog({
               {needPrice.length > 0 && (
                 <p className="mb-4 max-w-2xl text-[13.5px] leading-relaxed text-ink-soft">
                   The model export sets targets and bands, never prices, and a position the account
-                  does not hold has no price anywhere in these files. A row left blank still
-                  imports — it arrives without a price, and the table asks for one before it will
-                  offer a trade on it.
+                  does not hold has no price anywhere in these files.{' '}
+                  {carried
+                    ? `The ones marked below are what ${carried.from} held them at — the same security at a price a real export gave it. Overwrite any that have moved.`
+                    : 'A row left blank still imports — it arrives without a price, and the table asks for one before it will offer a trade on it.'}
                 </p>
               )}
 
@@ -285,8 +297,19 @@ export default function ImportDialog({
                         key={sym}
                         className="flex items-center gap-2.5 rounded-lg border border-line px-3 py-2"
                       >
-                        <span className="w-16 shrink-0 truncate font-sans text-[13.5px] font-bold">
-                          {sym}
+                        {/* Marked, so a figure that filled itself in is never mistaken for one
+                            this account's own file supplied. Stacked under the ticker rather than
+                            beside it: inline, the badge ate the width and truncated the symbol,
+                            and the symbol is the one thing in this cell that identifies the row. */}
+                        <span className="w-16 shrink-0">
+                          <span className="block truncate font-sans text-[13.5px] font-bold">
+                            {sym}
+                          </span>
+                          {carriedPrice(sym) && (
+                            <span className="block font-mono text-[10px] font-semibold uppercase tracking-[0.06em] text-ink-soft">
+                              kept
+                            </span>
+                          )}
                         </span>
                         <span className="text-[12.5px] text-ink-soft">$</span>
                         <NumInput

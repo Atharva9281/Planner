@@ -1,3 +1,5 @@
+import { CarriedModel } from './import/types';
+
 /** A stock in the model. `shares` is the live position, which trades move. */
 export interface Stock {
   /** Stable identity. Holdings key off this, never off `sym`, so two rows can share a symbol
@@ -154,8 +156,23 @@ export interface ExplorerState {
    * without a date on screen a portfolio restored on Friday is indistinguishable from one loaded
    * this morning. Absent on the worked example, whose prices were never real.
    */
-  source?: { kind: 'sample' | 'import' | 'manual'; label: string; loadedAt?: string };
+  source?: {
+    kind: 'sample' | 'import' | 'manual';
+    label: string;
+    loadedAt?: string;
+    /**
+     * The model this was built against, kept because `label` is the *account* wherever the
+     * holdings file named one — which leaves nothing else able to say which mandate is in force.
+     * It is what a model carried to the next account is called.
+     */
+    modelName?: string;
+  };
   log: LogEntry[];
   /** Monotonic counter behind every generated id, so ids are deterministic and SSR-safe. */
   nextId: number;
+  /**
+   * A model set aside for the next account, present only on an empty workspace between closing
+   * one account and opening the next. `applyImport` never writes it, so loading clears it.
+   */
+  carried?: CarriedModel;
 }

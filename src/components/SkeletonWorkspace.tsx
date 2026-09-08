@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import UploadSlots from './import/UploadSlots';
-import { ParsedImport } from '@/lib/import/types';
+import { CarriedModel, ParsedImport } from '@/lib/import/types';
 
 /**
  * The working page before it has any data: the real tiles and the real table, drawn empty, with
@@ -43,10 +43,13 @@ function Bar({ w }: { w: string }) {
 }
 
 export default function SkeletonWorkspace({
+  carried,
   onReady,
   onAddStock,
 }: {
-  onReady: (parsed: ParsedImport) => void;
+  /** A model kept from the account just closed, which arrives already in the model slot. */
+  carried?: CarriedModel;
+  onReady: (parsed: ParsedImport, carried?: CarriedModel) => void;
   onAddStock: () => void;
 }) {
   return (
@@ -115,14 +118,21 @@ export default function SkeletonWorkspace({
           <div className="relative flex justify-center px-4 pt-16 pb-10 sm:px-8">
             <div className="w-full max-w-3xl rounded-2xl border border-line bg-panel p-6 shadow-[0_16px_50px_rgba(20,23,30,0.16)] sm:p-7">
               <div className="text-center">
-                <h3 className="text-xl font-bold tracking-[-0.01em]">Load a portfolio</h3>
+                <h3 className="text-xl font-bold tracking-[-0.01em]">
+                  {carried ? 'Open the next account' : 'Load a portfolio'}
+                </h3>
+                {/* Says nothing about the model being kept: the slot below shows that, and can be
+                    emptied from there, which would leave a claim up here that had stopped being
+                    true. What stays true either way is that this account's holdings are needed. */}
                 <p className="mx-auto mt-1.5 max-w-lg text-[14px] leading-relaxed text-ink-soft">
-                  Two exports from your custodian. Upload each one below and the table fills in.
+                  {carried
+                    ? 'Add this account’s holdings export and the table fills in.'
+                    : 'Two exports from your custodian. Upload each one below and the table fills in.'}
                 </p>
               </div>
 
               <div className="mt-6">
-                <UploadSlots onReady={onReady} />
+                <UploadSlots carried={carried} onReady={onReady} />
               </div>
 
               <p className="mt-6 border-t border-line-soft pt-5 text-center text-[13.5px] text-ink-soft">

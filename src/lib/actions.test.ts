@@ -297,10 +297,39 @@ describe('reset everything', () => {
   });
 
   it('clears back to an empty portfolio only when asked', () => {
-    const cleared = clearAll();
+    const cleared = clearAll(sampleState());
     expect(cleared.portfolio.stocks).toHaveLength(0);
     expect(cleared.portfolio.cash).toBe(0);
     expect(loadSample().portfolio.stocks).toHaveLength(5);
+  });
+
+  it('keeps the model on the way out, so the next account can reuse it', () => {
+    const before = sampleState();
+    const carried = clearAll(before).carried!;
+
+    expect(carried.model.rows.map((r) => r.sym)).toEqual(
+      before.portfolio.stocks.map((s) => s.sym),
+    );
+    expect(carried.model.cashBand).toEqual({
+      target: before.portfolio.cashTarget,
+      floor: before.portfolio.cashFloor,
+      ceiling: before.portfolio.cashCeiling,
+    });
+    // Prices come too, to seed the preview for positions the next account does not hold.
+    for (const s of before.portfolio.stocks) expect(carried.prices[s.sym]).toBe(s.price);
+  });
+
+  it('carries the model as edited, not as the file first read it', () => {
+    let state = sampleState();
+    const id = state.portfolio.stocks[0].id;
+    state = setStockField(state, id, 'bandMax', 77);
+
+    const carried = clearAll(state).carried!;
+    expect(carried.model.rows[0].bandMax).toBe(77);
+  });
+
+  it('has nothing to carry from a workspace that was already empty', () => {
+    expect(clearAll(clearAll(sampleState())).carried).toBeUndefined();
   });
 });
 
