@@ -34,8 +34,15 @@ import {
 import { ParsedImport } from '@/lib/import/types';
 import { netOrders } from '@/lib/orders';
 import { priceAge } from '@/lib/format';
-import { needsDecision, planBuy, planSell, planToShares, unpricedPositions } from '@/lib/engine';
-import { BuyMode, ExplorerState, SellMode } from '@/lib/types';
+import {
+  needsDecision,
+  planToBandEdge,
+  planToLot,
+  planToShares,
+  planToTarget,
+  unpricedPositions,
+} from '@/lib/engine';
+import { ExplorerState, Portfolio, Stock, TradePlan } from '@/lib/types';
 import { useRowCollapse } from '@/lib/useRowCollapse';
 import { downloadTradeLog } from '@/lib/xlsx/download';
 
@@ -122,9 +129,13 @@ export default function Explorer({ slot }: { slot: Slot }) {
      own header line instead of giving them a row of their own. */
   const rowState = useRowCollapse(portfolio.stocks.map((s) => s.id));
 
-  /* Trades read the stock out of the state being updated, never a captured copy, so a rapid
-     double click cannot price its second trade off the pre-first-click portfolio. */
-  const handleBuy = (stockId: string, mode: BuyMode) => {
+  /**
+   * Every trade button on a row goes through here: it names a destination, the planner works out
+   * the direction, and the trade is priced against the state being updated rather than a captured
+   * copy — so a rapid double click cannot price its second trade off the pre-first-click
+   * portfolio.
+   */
+  const handlePlan = (stockId: string, make: (p: Portfolio, s: Stock) => TradePlan | null) => {
     /* Acting on a row keeps it open. The trade is what makes the row settled, and a settled row
        folds by default — so without this the row shut itself under the click that had just been
        made on it. */
@@ -132,17 +143,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
     setState((cur) => {
       const stock = cur.portfolio.stocks.find((s) => s.id === stockId);
       if (!stock) return cur;
-      const plan = planBuy(cur.portfolio, stock, mode);
-      return plan ? applyTrade(cur, plan) : cur;
-    });
-  };
-
-  const handleSell = (stockId: string, mode: SellMode) => {
-    rowState.pin(stockId);
-    setState((cur) => {
-      const stock = cur.portfolio.stocks.find((s) => s.id === stockId);
-      if (!stock) return cur;
-      const plan = planSell(cur.portfolio, stock, mode);
+      const plan = make(cur.portfolio, stock);
       return plan ? applyTrade(cur, plan) : cur;
     });
   };
@@ -152,15 +153,9 @@ export default function Explorer({ slot }: { slot: Slot }) {
     setPendingImport(null);
   };
 
-  const handleTradeTo = (stockId: string, targetShares: number) => {
-    rowState.pin(stockId);
-    setState((cur) => {
-      const stock = cur.portfolio.stocks.find((s) => s.id === stockId);
-      if (!stock) return cur;
-      const plan = planToShares(cur.portfolio, stock, targetShares);
-      return plan ? applyTrade(cur, plan) : cur;
-    });
-  };
+  const handleTradeTo = (stockId: string, targetShares: number) =>
+    handlePlan(stockId, (p, s) => planToShares(p, s, targetShares));
+
 
   const openModelWithNewStock = () => {
     setState(addStock);
@@ -309,8 +304,9 @@ export default function Explorer({ slot }: { slot: Slot }) {
               <LotAwareTable
                 portfolio={portfolio}
                 resettable={resettable}
-                onBuy={handleBuy}
-                onSell={handleSell}
+                onTarget={(id) => handlePlan(id, planToTarget)}
+                onLot={(id, edge) => handlePlan(id, (p, s) => planToLot(p, s, edge))}
+                onEdge={(id, edge) => handlePlan(id, (p, s) => planToBandEdge(p, s, edge))}
                 onResetStock={(id) => setState((cur) => resetStock(cur, id))}
                 onPrice={(id, price) => setState((cur) => setStockField(cur, id, 'price', price))}
                 onTradeTo={handleTradeTo}

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { likelyFunds, num, offModelSymbols, parseSheets, unpricedSymbols } from './parse';
 import { applyImport, importIssues } from './apply';
 import { Resolution, SheetGrid } from './types';
-import { lotAwareTarget, mandatoryStatus, needsDecision, planBuy, totalValue } from '../engine';
+import { lotAwareTarget, mandatoryStatus, needsDecision, planToTarget, totalValue } from '../engine';
 
 /* ------------------------------------------------------------------ */
 /* fixtures, transcribed from the real exports                         */
@@ -477,7 +477,7 @@ describe('an account being opened, with a balance and nothing held', () => {
     expect(mandatoryStatus(state.portfolio, qqq)).toBe('under');
     expect(needsDecision(state.portfolio, qqq)).toBe(true);
 
-    const plan = planBuy(state.portfolio, qqq, 'target')!;
+    const plan = planToTarget(state.portfolio, qqq)!;
     expect(plan).not.toBeNull();
     expect(plan.action).toBe('BUY');
     expect(plan.shares).toBeGreaterThan(0);

@@ -17,17 +17,35 @@ import {
   undoLast,
 } from './actions';
 import { sampleState } from './defaultState';
-import { planBuy, planSell, totalValue } from './engine';
+import { planToBandEdge, planToLot, planToTarget, totalValue } from './engine';
 import { ExplorerState } from './types';
 
 const stockOf = (state: ExplorerState, sym: string) =>
   state.portfolio.stocks.find((s) => s.sym === sym)!;
 
-const buy = (state: ExplorerState, sym: string, mode: 'target' | 'highlot' | 'rawmax' = 'target') =>
-  applyTrade(state, planBuy(state.portfolio, stockOf(state, sym), mode)!);
+const buy = (state: ExplorerState, sym: string, mode: 'target' | 'highlot' | 'rawmax' = 'target') => {
+  const k = stockOf(state, sym);
+  return applyTrade(
+    state,
+    (mode === 'target'
+      ? planToTarget(state.portfolio, k)
+      : mode === 'highlot'
+        ? planToLot(state.portfolio, k, 'high')
+        : planToBandEdge(state.portfolio, k, 'high'))!,
+  );
+};
 
-const sell = (state: ExplorerState, sym: string, mode: 'target' | 'lowlot' | 'rawmax' = 'target') =>
-  applyTrade(state, planSell(state.portfolio, stockOf(state, sym), mode)!);
+const sell = (state: ExplorerState, sym: string, mode: 'target' | 'lowlot' | 'rawmax' = 'target') => {
+  const k = stockOf(state, sym);
+  return applyTrade(
+    state,
+    (mode === 'target'
+      ? planToTarget(state.portfolio, k)
+      : mode === 'lowlot'
+        ? planToLot(state.portfolio, k, 'low')
+        : planToBandEdge(state.portfolio, k, 'low'))!,
+  );
+};
 
 describe('applying a trade', () => {
   it('moves shares and cash and records the arithmetic', () => {
@@ -277,3 +295,4 @@ describe('reset everything', () => {
     expect(loadSample().portfolio.stocks).toHaveLength(5);
   });
 });
+

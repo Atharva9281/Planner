@@ -13,13 +13,11 @@ import {
   mandatoryStatus,
   needsDecision,
   rawMaxBuy,
-  rawMinSell,
   RawMaxBuy,
-  RawMinSell,
   weight,
 } from '@/lib/engine';
 import { money, pct, shares as fmtShares } from '@/lib/format';
-import { BuyMode, Portfolio, SellMode, Stock } from '@/lib/types';
+import { LotEdge, Portfolio, Stock } from '@/lib/types';
 import { RowCollapse } from '@/lib/useRowCollapse';
 
 /**
@@ -37,8 +35,12 @@ interface Props {
   portfolio: Portfolio;
   /** Stock ids with something to undo, so the per-row reset can be disabled when it is a no-op. */
   resettable: Set<string>;
-  onBuy: (stockId: string, mode: BuyMode) => void;
-  onSell: (stockId: string, mode: SellMode) => void;
+  /** Trades to the model's lot-aware answer for this row. */
+  onTarget: (stockId: string) => void;
+  /** Trades to a band-edge lot, whichever side of the holding that lot happens to be on. */
+  onLot: (stockId: string, edge: LotEdge) => void;
+  /** Trades to the band edge itself, with no lot preference. */
+  onEdge: (stockId: string, edge: LotEdge) => void;
   onResetStock: (stockId: string) => void;
   /** Lets an imported position that arrived without a price be given one in place. */
   onPrice: (stockId: string, price: number) => void;
@@ -313,25 +315,28 @@ function BandStrip({
   minShares,
   maxShares,
   rawBuy,
-  rawSell,
   cash,
   canTrade,
-  onBuy,
-  onSell,
+  onEdge,
   onSpend,
 }: {
   stock: Stock;
   minShares: number;
   maxShares: number;
   rawBuy: RawMaxBuy;
-  rawSell: RawMinSell;
   cash: number;
   canTrade: boolean;
-  onBuy: (stockId: string, mode: BuyMode) => void;
-  onSell: (stockId: string, mode: SellMode) => void;
+  onEdge: (stockId: string, edge: LotEdge) => void;
   /** Buys every share the cash affords, band or no band. */
   onSpend: () => void;
 }) {
+  /* Each edge is a destination, so the move it needs depends on which side of it the position
+     sits. A holding under its own floor buys up to it; the strip says so rather than offering a
+     greyed "Sell to the floor" that was never the trade. */
+  const toFloor = minShares - stock.shares;
+  const toCeiling = maxShares - stock.shares;
+  const unaffordable = (delta: number) => delta > 0 && rawBuy.cashAfford <= 0;
+
   return (
     <div className="px-3 pt-1 pb-4">
       <span className={`${CAPTION} text-ink-faint`}>The band edges, and what the cash buys</span>
@@ -342,11 +347,11 @@ function BandStrip({
           action={
             canTrade && (
               <button
-                className="btn-sell"
-                disabled={rawSell.maxSell <= 0}
-                onClick={() => onSell(stock.id, 'rawmax')}
+                className={toFloor > 0 ? 'btn-buy' : 'btn-sell'}
+                disabled={toFloor === 0 || unaffordable(toFloor)}
+                onClick={() => onEdge(stock.id, 'low')}
               >
-                Sell to the floor
+                {toFloor > 0 ? 'Buy up to the floor' : 'Sell to the floor'}
               </button>
             )
           }
@@ -362,11 +367,11 @@ function BandStrip({
           action={
             canTrade && (
               <button
-                className="btn-buy"
-                disabled={rawBuy.maxBuy <= 0}
-                onClick={() => onBuy(stock.id, 'rawmax')}
+                className={toCeiling < 0 ? 'btn-sell' : 'btn-buy'}
+                disabled={toCeiling === 0 || unaffordable(toCeiling)}
+                onClick={() => onEdge(stock.id, 'high')}
               >
-                Buy to the ceiling
+                {toCeiling < 0 ? 'Sell down to the ceiling' : 'Buy to the ceiling'}
               </button>
             )
           }
@@ -424,8 +429,9 @@ function BandStrip({
 export default function LotAwareTable({
   portfolio,
   resettable,
-  onBuy,
-  onSell,
+  onTarget,
+  onLot,
+  onEdge,
   onResetStock,
   onPrice,
   onTradeTo,
@@ -518,7 +524,6 @@ export default function LotAwareTable({
             const open = collapse.isOpen(s.id, settled);
 
             const rawBuy = rawMaxBuy(portfolio, s);
-            const rawSell = rawMinSell(portfolio, s);
             const breach = r.mandatory ? 'shadow-[inset_3px_0_0_0_var(--color-sell)]' : '';
 
             if (!open) {
@@ -702,11 +707,7 @@ export default function LotAwareTable({
                         canTrade={canTrade}
                         affordable={r.canAfford}
                         cash={portfolio.cash}
-                        onGo={() =>
-                          r.target.goal > s.shares
-                            ? onBuy(s.id, 'target')
-                            : onSell(s.id, 'target')
-                        }
+                        onGo={() => onTarget(s.id)}
                         goLabel="Adjust to target"
                       />
                     )}
@@ -721,8 +722,10 @@ export default function LotAwareTable({
                       held={s.shares}
                       canTrade={canTrade}
                       tone="sell"
-                      onGo={() => onSell(s.id, 'rawmax')}
-                      goLabel="Sell to the floor"
+                      affordable={r.canAfford}
+                      cash={portfolio.cash}
+                      onGo={() => onEdge(s.id, 'low')}
+                      goLabel="Trade to the floor"
                     />
                   </td>
 
@@ -734,8 +737,10 @@ export default function LotAwareTable({
                       price={s.price}
                       held={s.shares}
                       canTrade={canTrade}
-                      onGo={() => onSell(s.id, 'lowlot')}
-                      goLabel="Sell to lowest lot"
+                      affordable={r.canAfford}
+                      cash={portfolio.cash}
+                      onGo={() => onLot(s.id, 'low')}
+                      goLabel="Trade to the lot nearest the floor"
                     />
                   </td>
 
@@ -754,8 +759,8 @@ export default function LotAwareTable({
                       tone="buy"
                       affordable={r.canAfford}
                       cash={portfolio.cash}
-                      onGo={() => onBuy(s.id, 'rawmax')}
-                      goLabel="Buy to the ceiling"
+                      onGo={() => onEdge(s.id, 'high')}
+                      goLabel="Trade to the ceiling"
                     />
                   </td>
 
@@ -769,8 +774,8 @@ export default function LotAwareTable({
                       canTrade={canTrade}
                       affordable={r.canAfford}
                       cash={portfolio.cash}
-                      onGo={() => onBuy(s.id, 'highlot')}
-                      goLabel="Buy to highest lot"
+                      onGo={() => onLot(s.id, 'high')}
+                      goLabel="Trade to the lot nearest the ceiling"
                     />
                   </td>
 
@@ -815,11 +820,9 @@ export default function LotAwareTable({
                       minShares={r.minShares}
                       maxShares={r.maxShares}
                       rawBuy={rawBuy}
-                      rawSell={rawSell}
                       cash={portfolio.cash}
                       canTrade={canTrade}
-                      onBuy={onBuy}
-                      onSell={onSell}
+                      onEdge={onEdge}
                       onSpend={() => onTradeTo(s.id, s.shares + r.canAfford)}
                     />
                   </td>

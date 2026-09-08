@@ -58,14 +58,16 @@ export interface Portfolio {
 export type TradeAction = 'BUY' | 'SELL';
 
 /**
- * target  - the lot-aware model target: the nearest 100-share lot if its weight lands inside
- *           the band, otherwise the raw share count rounded to a whole share.
- * highlot - the highest multiple of 100 that still sits at or below the band ceiling.
- * lowlot  - the lowest multiple of 100 that still sits at or above the band floor.
- * rawmax  - no lot preference at all: as far as the band or the cash allows, odd numbers included.
+ * Which band edge a destination belongs to: the floor, or the ceiling.
+ *
+ * There are no buy modes and sell modes any more. Every column in the table names a share count
+ * the position could end at, and a destination can sit on either side of what is held — so the
+ * planners take a destination and work out the direction (`planToTarget`, `planToLot`,
+ * `planToBandEdge`, `planToShares`). One-way modes left half of four columns dead: on a position
+ * over its ceiling, the button under a red "SELL 2,700 sh" called the buy planner and did nothing.
  */
-export type BuyMode = 'target' | 'highlot' | 'rawmax';
-export type SellMode = 'target' | 'lowlot' | 'rawmax';
+export type LotEdge = 'low' | 'high';
+
 
 /** One executable trade, fully priced, before it is applied to the portfolio. */
 export interface TradePlan {

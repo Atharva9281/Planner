@@ -10,8 +10,9 @@ import {
   lowestLotWithinBand,
   mandatoryStatus,
   needsDecision,
-  planBuy,
-  planSell,
+  planToBandEdge,
+  planToLot,
+  planToTarget,
   rawMaxBuy,
   rawMinSell,
   planToShares,
@@ -251,10 +252,10 @@ describe('raw room, no lot rounding', () => {
   });
 });
 
-describe('planning a buy', () => {
+describe('planning a trade to the target', () => {
   it('buys the gap up to the lot-aware target', () => {
     const p = samplePortfolio();
-    const plan = planBuy(p, stockOf(p, 'MU'), 'target')!;
+    const plan = planToTarget(p, stockOf(p, 'MU'))!;
 
     expect(plan).toMatchObject({
       action: 'BUY',
@@ -265,65 +266,12 @@ describe('planning a buy', () => {
       partial: false,
     });
     expect(plan.amount).toBeCloseTo(60 * 118.4, 6);
-    expect(plan.label).toBe('buy to lot-aware target (a clean lot)');
+    expect(plan.label).toBe('buy up to the lot-aware target, a clean lot');
   });
 
-  it('buys up to the highest reachable lot', () => {
+  it('sells down to it from the other side, off the same call', () => {
     const p = samplePortfolio();
-    expect(planBuy(p, stockOf(p, 'MU'), 'highlot')).toMatchObject({
-      shares: 160, // 940 → 1,100
-      goalShares: 1100,
-      resultIsLot: true,
-    });
-  });
-
-  it('buys the raw maximum with no lot preference', () => {
-    const p = samplePortfolio();
-    const plan = planBuy(p, stockOf(p, 'MSFT'), 'rawmax')!;
-    expect(plan.shares).toBe(14); // 600 → 614, the ceiling
-    expect(plan.resultIsLot).toBe(false);
-    expect(plan.label).toContain('limited by its own band');
-  });
-
-  it('fills partially and says so when the cash runs out first', () => {
-    const p = build(
-      [
-        { id: 'a', sym: 'X', price: 500, target: 30, bandMin: 25, bandMax: 35, shares: 10 },
-        { id: 'b', sym: 'Y', price: 100, target: 60, bandMin: 55, bandMax: 90, shares: 300 },
-      ],
-      3000,
-    );
-
-    // Target is 23 shares, so it wants 13 more, but $3,000 only covers 6 at $500.
-    const plan = planBuy(p, stockOf(p, 'X'), 'target')!;
-    expect(plan).toMatchObject({
-      shares: 6,
-      goalShares: 23,
-      resultShares: 16,
-      resultIsLot: false,
-      partial: true,
-    });
-    expect(plan.label).toBe('buy to target (raw, no nearby lot fit inside the band)');
-  });
-
-  it('returns nothing when the holding is already at or above the goal', () => {
-    const p = samplePortfolio();
-    // MSFT sits above its target, so there is no buy to make.
-    expect(planBuy(p, stockOf(p, 'MSFT'), 'target')).toBeNull();
-    // And nothing higher than 600 is reachable.
-    expect(planBuy(p, stockOf(p, 'MSFT'), 'highlot')).toBeNull();
-  });
-
-  it('returns nothing when the cash cannot cover even one share', () => {
-    const p = { ...samplePortfolio(), cash: 10 };
-    expect(planBuy(p, stockOf(p, 'MU'), 'target')).toBeNull();
-  });
-});
-
-describe('planning a sell', () => {
-  it('sells down to the lot-aware target', () => {
-    const p = samplePortfolio();
-    const plan = planSell(p, stockOf(p, 'MSFT'), 'target')!;
+    const plan = planToTarget(p, stockOf(p, 'MSFT'))!;
 
     expect(plan).toMatchObject({
       action: 'SELL',
@@ -336,32 +284,151 @@ describe('planning a sell', () => {
     expect(plan.amount).toBeCloseTo(100 * 412.3, 6);
   });
 
-  it('sells down to the lowest reachable lot', () => {
+  it('fills partially and says so when the cash runs out first', () => {
+    const p = build(
+      [
+        { id: 'a', sym: 'X', price: 500, target: 30, bandMin: 25, bandMax: 35, shares: 10 },
+        { id: 'b', sym: 'Y', price: 100, target: 60, bandMin: 55, bandMax: 90, shares: 300 },
+      ],
+      3000,
+    );
+
+    // Target is 23 shares, so it wants 13 more, but $3,000 only covers 6 at $500.
+    const plan = planToTarget(p, stockOf(p, 'X'))!;
+    expect(plan).toMatchObject({
+      shares: 6,
+      goalShares: 23,
+      resultShares: 16,
+      resultIsLot: false,
+      partial: true,
+    });
+    expect(plan.label).toBe('buy up to the target, raw — no nearby lot fits inside the band');
+  });
+
+  it('is never limited by cash on the sell side', () => {
+    const p = { ...samplePortfolio(), cash: 0 };
+    expect(planToTarget(p, stockOf(p, 'MSFT'))!.partial).toBe(false);
+  });
+
+  it('returns nothing when the holding already sits on the goal', () => {
     const p = samplePortfolio();
-    expect(planSell(p, stockOf(p, 'MU'), 'lowlot')).toMatchObject({
+    const mu = stockOf(p, 'MU');
+    const at = { ...p, stocks: p.stocks.map((s) => (s.id === mu.id ? { ...s, shares: 1000 } : s)) };
+    expect(planToTarget(at, stockOf(at, 'MU'))).toBeNull();
+  });
+
+  it('returns nothing when the cash cannot cover even one share', () => {
+    // X sits under its target and wants eight more shares at $500, against $5 of cash.
+    const p = build(
+      [
+        { id: 'a', sym: 'X', price: 500, target: 60, bandMin: 50, bandMax: 70, shares: 10 },
+        { id: 'b', sym: 'Y', price: 100, target: 35, bandMin: 30, bandMax: 40, shares: 100 },
+      ],
+      5,
+    );
+    expect(planToTarget(p, stockOf(p, 'X'))).toBeNull();
+  });
+});
+
+describe('planning a trade to a band-edge lot', () => {
+  it('buys up to the highest lot inside the ceiling', () => {
+    const p = samplePortfolio();
+    expect(planToLot(p, stockOf(p, 'MU'), 'high')).toMatchObject({
+      action: 'BUY',
+      shares: 160, // 940 → 1,100
+      goalShares: 1100,
+      resultIsLot: true,
+    });
+  });
+
+  it('sells down to the lowest lot above the floor', () => {
+    const p = samplePortfolio();
+    expect(planToLot(p, stockOf(p, 'MU'), 'low')).toMatchObject({
+      action: 'SELL',
       shares: 140, // 940 → 800
       goalShares: 800,
     });
   });
 
-  it('sells the raw maximum, stopping at the band floor', () => {
+  /**
+   * The bug this call exists for. NVDA holds 280 and the lowest lot inside its band is 300, so
+   * the column shows a green BUY of 20 shares — and the old one-way planner answered null to it,
+   * leaving a live-looking button that did nothing on exactly the rows that needed one.
+   */
+  it('buys up to the lower lot when the holding sits beneath it', () => {
     const p = samplePortfolio();
-    expect(planSell(p, stockOf(p, 'NVDA'), 'rawmax')).toMatchObject({
+    expect(planToLot(p, stockOf(p, 'NVDA'), 'low')).toMatchObject({
+      action: 'BUY',
+      shares: 20, // 280 → 300
+      goalShares: 300,
+      resultIsLot: true,
+    });
+  });
+
+  /** The mirror: a position past its ceiling sells down to the upper lot. */
+  it('sells down to the upper lot when the holding sits above it', () => {
+    const p = build(
+      [{ id: 'a', sym: 'OVER', price: 100, target: 10, bandMin: 8, bandMax: 12, shares: 3000 }],
+      10_000,
+    );
+    expect(planToLot(p, stockOf(p, 'OVER'), 'high')).toMatchObject({
+      action: 'SELL',
+      shares: 2700, // 3,000 → 300, the highest lot at or below the 12% ceiling
+      goalShares: 300,
+    });
+  });
+
+  it('has no answer where the lot rule does not apply', () => {
+    const p = build(
+      [
+        {
+          id: 'a',
+          sym: 'FUND',
+          price: 50,
+          target: 10,
+          bandMin: 8,
+          bandMax: 12,
+          shares: 100,
+          lotRounding: false,
+        },
+      ],
+      10_000,
+    );
+    expect(planToLot(p, stockOf(p, 'FUND'), 'high')).toBeNull();
+    expect(planToLot(p, stockOf(p, 'FUND'), 'low')).toBeNull();
+  });
+});
+
+describe('planning a trade to the band edge itself', () => {
+  it('buys up to the ceiling with no lot preference', () => {
+    const p = samplePortfolio();
+    const plan = planToBandEdge(p, stockOf(p, 'MSFT'), 'high')!;
+    expect(plan.shares).toBe(14); // 600 → 614, the ceiling
+    expect(plan.resultIsLot).toBe(false);
+    expect(plan.label).toBe("buy up to this stock's own 45% ceiling");
+  });
+
+  it('sells down to the floor, stopping there', () => {
+    const p = samplePortfolio();
+    expect(planToBandEdge(p, stockOf(p, 'NVDA'), 'low')).toMatchObject({
+      action: 'SELL',
       shares: 51, // 280 → 229
       goalShares: 229,
       resultIsLot: false,
     });
   });
 
-  it('is never limited by cash', () => {
-    const p = { ...samplePortfolio(), cash: 0 };
-    expect(planSell(p, stockOf(p, 'MSFT'), 'target')!.partial).toBe(false);
-  });
-
-  it('returns nothing when there is no lower lot to reach', () => {
-    const p = samplePortfolio();
-    // NVDA holds 280 and the lowest lot inside the band is 300, which is above it.
-    expect(planSell(p, stockOf(p, 'NVDA'), 'lowlot')).toBeNull();
+  /** A position under its own floor is bought up to it, which is the mandatory fix. */
+  it('buys up to the floor when the holding is below the band', () => {
+    const p = build(
+      [{ id: 'a', sym: 'UNDER', price: 100, target: 10, bandMin: 8, bandMax: 12, shares: 20 }],
+      100_000,
+    );
+    expect(planToBandEdge(p, stockOf(p, 'UNDER'), 'low')).toMatchObject({
+      action: 'BUY',
+      shares: 62, // 20 → 82
+      goalShares: 82, // 8% of $102,000 at $100, rounded up into the band
+    });
   });
 });
 

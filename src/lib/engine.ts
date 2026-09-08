@@ -9,7 +9,7 @@
  * and whenever an off-model holding is sold. Nothing here caches a total.
  */
 
-import { BuyMode, OffModelHolding, Portfolio, SellMode, Stock, TradePlan } from './types';
+import { LotEdge, OffModelHolding, Portfolio, Stock, TradePlan } from './types';
 
 export const LOT = 100;
 
@@ -272,40 +272,60 @@ const plan = (
 };
 
 /**
- * Returns null when there is nothing to do: already at or above the goal, or not enough cash
- * for even one share. A buy is clamped by cash and reported as a partial fill.
+ * Trades to a share count the table is already showing, in whichever direction reaches it.
+ *
+ * Every column between the ticker and the box states a destination — "the lowest lot above the
+ * floor is 300 sh" — and a destination can sit above the holding or below it. `planBuy` and
+ * `planSell` each know one direction only, so a column wired to either of them was dead on half
+ * its rows: a position over its ceiling showed a red SELL on the upper-lot column and did nothing
+ * when pressed, because the handler underneath was a buy. Reachable in the worked example, where
+ * NVDA holds 280 against a lowest lot of 300 and the green BUY there never fired.
+ *
+ * Cash clamps a buy and the fill is reported as partial; a sell is never clamped.
  */
-export function planBuy(p: Portfolio, s: Stock, mode: BuyMode): TradePlan | null {
-  if (!isTradeable(s)) return null;
-  let goal: number;
-  let label: string;
+function toDestination(p: Portfolio, s: Stock, goal: number, side: string): TradePlan | null {
+  const delta = goal - s.shares;
+  if (delta === 0) return null;
 
-  if (mode === 'target') {
-    const lt = lotAwareTarget(p, s);
-    goal = lt.goal;
-    label = lt.isLot
-      ? 'buy to lot-aware target (a clean lot)'
-      : 'buy to target (raw, no nearby lot fit inside the band)';
-  } else if (mode === 'highlot') {
-    if (!lotRounds(s)) return null;
-    goal = highestLotWithinBand(p, s).highestLot;
-    label = "buy to the highest reachable lot before this stock's own ceiling";
-  } else {
-    const r = rawMaxBuy(p, s);
-    if (r.maxBuy <= 0) return null;
-    goal = s.shares + r.maxBuy;
-    label = `buy the raw maximum, no lot preference, limited by ${
-      r.limiter === 'band' ? 'its own band' : 'cash'
-    }`;
+  if (delta > 0) {
+    const buy = Math.min(delta, affordableShares(p, s));
+    if (buy <= 0) return null;
+    return plan(s, 'BUY', buy, goal, buy < delta, `buy up to ${side}`);
   }
 
-  const need = Math.max(goal - s.shares, 0);
-  if (need <= 0) return null;
+  return plan(s, 'SELL', -delta, goal, false, `sell down to ${side}`);
+}
 
-  const buy = Math.min(need, affordableShares(p, s));
-  if (buy <= 0) return null;
+/** The nearest round lot inside one of the band's edges. */
+export function planToLot(p: Portfolio, s: Stock, edge: LotEdge): TradePlan | null {
+  if (!isTradeable(s) || !lotRounds(s) || s.price <= 0) return null;
 
-  return plan(s, 'BUY', buy, goal, buy < need, label);
+  const goal =
+    edge === 'high' ? highestLotWithinBand(p, s).highestLot : lowestLotWithinBand(p, s).lowestLot;
+  const bound = edge === 'high' ? s.bandMax : s.bandMin;
+
+  return toDestination(
+    p,
+    s,
+    goal,
+    `the lot nearest this stock's own ${bound}% ${edge === 'high' ? 'ceiling' : 'floor'}`,
+  );
+}
+
+/** The band edge itself, with no lot preference: the last share count still inside the mandate. */
+export function planToBandEdge(p: Portfolio, s: Stock, edge: LotEdge): TradePlan | null {
+  if (!isTradeable(s) || s.price <= 0) return null;
+
+  const { minShares, maxShares } = bandShareLimits(p, s);
+  const goal = edge === 'high' ? maxShares : minShares;
+  const bound = edge === 'high' ? s.bandMax : s.bandMin;
+
+  return toDestination(
+    p,
+    s,
+    goal,
+    `this stock's own ${bound}% ${edge === 'high' ? 'ceiling' : 'floor'}`,
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -420,30 +440,20 @@ export function planToShares(p: Portfolio, s: Stock, targetShares: number): Trad
   );
 }
 
-/** Returns null when the stock is already at or below the goal. */
-export function planSell(p: Portfolio, s: Stock, mode: SellMode): TradePlan | null {
-  if (!isTradeable(s)) return null;
-  let goal: number;
-  let label: string;
+/**
+ * The model's own answer for this row: the nearest clean lot when its weight lands inside the
+ * band, otherwise the raw share count.
+ */
+export function planToTarget(p: Portfolio, s: Stock): TradePlan | null {
+  if (!isTradeable(s) || s.price <= 0) return null;
 
-  if (mode === 'target') {
-    const lt = lotAwareTarget(p, s);
-    goal = lt.goal;
-    label = lt.isLot
-      ? 'sell to lot-aware target (a clean lot)'
-      : 'sell to target (raw, no nearby lot fit inside the band)';
-  } else if (mode === 'lowlot') {
-    if (!lotRounds(s)) return null;
-    goal = lowestLotWithinBand(p, s).lowestLot;
-    label = "sell to the lowest reachable lot before this stock's own floor";
-  } else {
-    goal = rawMinSell(p, s).minShares;
-    label =
-      'sell down to the raw minimum, no lot preference, the fewest shares that stay inside the band';
-  }
-
-  const sell = Math.max(s.shares - goal, 0);
-  if (sell <= 0) return null;
-
-  return plan(s, 'SELL', sell, goal, false, label);
+  const lt = lotAwareTarget(p, s);
+  return toDestination(
+    p,
+    s,
+    lt.goal,
+    lt.isLot
+      ? 'the lot-aware target, a clean lot'
+      : 'the target, raw — no nearby lot fits inside the band',
+  );
 }

@@ -1,18 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { applyTrade, resetAll, sellOffModel } from './actions';
 import { baselineFrom, sampleState } from './defaultState';
-import { planBuy, planSell, planToShares, totalValue } from './engine';
+import { planToBandEdge, planToLot, planToShares, planToTarget, totalValue } from './engine';
 import { netOrders, orderSummary } from './orders';
 import { ExplorerState, Portfolio } from './types';
 
 const stock = (s: ExplorerState, sym: string) => s.portfolio.stocks.find((x) => x.sym === sym)!;
 
+/* The destinations, named the way the columns of the table name them. Which direction each one
+   turns out to need is the planner's business, not the caller's. */
 const buy = (s: ExplorerState, sym: string, mode: 'target' | 'highlot' | 'rawmax') => {
-  const plan = planBuy(s.portfolio, stock(s, sym), mode);
+  const k = stock(s, sym);
+  const plan =
+    mode === 'target'
+      ? planToTarget(s.portfolio, k)
+      : mode === 'highlot'
+        ? planToLot(s.portfolio, k, 'high')
+        : planToBandEdge(s.portfolio, k, 'high');
   return plan ? applyTrade(s, plan) : s;
 };
 const sell = (s: ExplorerState, sym: string, mode: 'target' | 'lowlot' | 'rawmax') => {
-  const plan = planSell(s.portfolio, stock(s, sym), mode);
+  const k = stock(s, sym);
+  const plan =
+    mode === 'target'
+      ? planToTarget(s.portfolio, k)
+      : mode === 'lowlot'
+        ? planToLot(s.portfolio, k, 'low')
+        : planToBandEdge(s.portfolio, k, 'low');
   return plan ? applyTrade(s, plan) : s;
 };
 const to = (s: ExplorerState, sym: string, shares: number) => {

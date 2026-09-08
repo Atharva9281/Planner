@@ -2,7 +2,7 @@ import { unzipSync, strFromU8 } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { applyTrade, sellOffModel, addOffModel, setOffModelField } from '../actions';
 import { sampleState } from '../defaultState';
-import { planBuy, planSell } from '../engine';
+import { planToBandEdge, planToTarget } from '../engine';
 import { orderSummary } from '../orders';
 import { ExplorerState } from '../types';
 import { contextSheet, ordersSheet, tradeLogFilename, ORDER_HEADERS } from './tradeLog';
@@ -28,13 +28,13 @@ function rowValues(xml: string, rowNumber: number): string[] {
 /** A worked example with three trades on it: two model, one off-model. */
 function traded(): ExplorerState {
   let s: ExplorerState = sampleState();
-  const step = (id: string, plan: typeof planBuy | typeof planSell, mode: 'target') => {
+  const step = (id: string) => {
     const stock = s.portfolio.stocks.find((x) => x.id === id)!;
-    const p = plan(s.portfolio, stock, mode);
+    const p = planToTarget(s.portfolio, stock);
     if (p) s = applyTrade(s, p);
   };
-  step('s1', planSell, 'target');
-  step('s2', planBuy, 'target');
+  step('s1');
+  step('s2');
 
   s = addOffModel(s);
   const offId = s.portfolio.offModel[0].id;
@@ -126,8 +126,12 @@ describe('the orders sheet', () => {
   it('states one row for a position bought in two steps', () => {
     let s = sampleState();
     const mu = () => s.portfolio.stocks.find((x) => x.sym === 'MU')!;
-    for (const mode of ['target', 'rawmax'] as const) {
-      const plan = planBuy(s.portfolio, mu(), mode);
+    // Two clicks on the same position: to target, then on up to its ceiling.
+    for (const make of [
+      () => planToTarget(s.portfolio, mu()),
+      () => planToBandEdge(s.portfolio, mu(), 'high'),
+    ]) {
+      const plan = make();
       if (plan) s = applyTrade(s, plan);
     }
     expect(s.log.length).toBe(2);
