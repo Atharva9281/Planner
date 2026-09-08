@@ -314,7 +314,6 @@ describe('taking every position to one destination', () => {
       expect(s.shares).toBe(goal);
     }
     expect(outcome.traded).toBe(5);
-    expect(outcome.skippedForCash).toBe(0);
     expect(outcome.noDestination).toBe(0);
   });
 
@@ -333,9 +332,12 @@ describe('taking every position to one destination', () => {
     expect(second.state.log).toHaveLength(first.state.log.length);
   });
 
-  it('skips a row whole rather than part-filling it when the cash runs short', () => {
+  it('buys the whole way and lets the cash go negative when it will not cover the move', () => {
     /* X wants ten more shares at $500 and the cash covers three. Y is fixed income — held and
-       counted, never traded — so nothing sells to rescue the buy. */
+       counted, never traded — so nothing can sell to fund the buy even in principle.
+
+       The advisor gets all ten shares and a cash line of -$3,500 to answer, rather than a row
+       left short of its destination on a number nobody asked for. */
     const state: ExplorerState = {
       ...sampleState(),
       portfolio: {
@@ -362,10 +364,36 @@ describe('taking every position to one destination', () => {
     };
 
     const { state: after, outcome } = tradeAll(state, 'target');
-    expect(outcome.skippedForCash).toBeGreaterThan(0);
+    const x = after.portfolio.stocks.find((s) => s.sym === 'X')!;
+
+    expect(x.shares).toBe(destinationShares(state.portfolio, state.portfolio.stocks[0], 'target'));
+    // Nothing was cut short, so nothing is a partial fill.
     expect(after.log.every((e) => !e.partial)).toBe(true);
-    // The row it could not fund is untouched, not left on a number that is not its destination.
-    expect(after.portfolio.stocks.find((s) => s.sym === 'X')!.shares).toBe(10);
+    expect(outcome.cashAfter).toBeLessThan(0);
+    expect(after.portfolio.cash).toBe(outcome.cashAfter);
+  });
+
+  it('never sells one position to fund another', () => {
+    /* MSFT is over its target and NVDA is under it, with no cash to bridge them. The old rule
+       ran MSFT's sale first precisely so NVDA could spend the proceeds. Now each row answers only
+       its own column, and any raising is left to the advisor. */
+    const start: ExplorerState = {
+      ...sampleState(),
+      portfolio: { ...samplePortfolio(), cash: 0 },
+      log: [],
+    };
+    const { state, outcome } = tradeAll(start, 'target');
+
+    for (const s of state.portfolio.stocks) {
+      expect(s.shares).toBe(destinationShares(start.portfolio, s, 'target'));
+    }
+    // Trades come in table order now, not sells-first.
+    expect(state.log.map((e) => e.sym)).toEqual(
+      start.portfolio.stocks
+        .filter((s) => destinationShares(start.portfolio, s, 'target') !== s.shares)
+        .map((s) => s.sym),
+    );
+    expect(outcome.traded).toBe(state.log.length);
   });
 
   it('has no destination for a holding the lot rule does not apply to', () => {
@@ -399,17 +427,18 @@ describe('taking every position to one destination', () => {
     expect(outcome.belowCashFloor).toBe(true);
   });
 
-  it('sells first, so the proceeds are there to fund the buys', () => {
-    // NVDA can only reach its upper lot on money MSFT's sale raises.
-    const start: ExplorerState = {
-      ...sampleState(),
-      portfolio: { ...samplePortfolio(), cash: 0 },
-      log: [],
-    };
-    const { state, outcome } = tradeAll(start, 'target');
+  it('still sells a position that sits above the destination, since that is where its column points', () => {
+    const before = sampleState();
+    const { state } = tradeAll(before, 'lot-low');
 
-    expect(state.log[0].action).toBe('SELL');
-    expect(outcome.traded).toBeGreaterThan(1);
+    const sold = state.log.filter((e) => e.action === 'SELL');
+    expect(sold.length).toBeGreaterThan(0);
+    for (const e of sold) {
+      // Each sale lands on that row's own lot-low column, never one share beyond it to raise cash.
+      expect(e.resultShares).toBe(
+        destinationShares(before.portfolio, before.portfolio.stocks.find((s) => s.id === e.stockId)!, 'lot-low'),
+      );
+    }
   });
 });
 

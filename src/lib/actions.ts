@@ -135,8 +135,8 @@ export interface BulkOutcome {
   settled: number;
   /** Positions this destination does not exist for: no lot rule, no price, or never traded here. */
   noDestination: number;
-  /** Positions passed over because the cash could not fund the whole move. */
-  skippedForCash: number;
+  /** Cash left afterwards. Negative is the amount the advisor still has to raise. */
+  cashAfter: number;
   /** True when the buying took cash below its own floor, having started at or above it. */
   belowCashFloor: boolean;
   /** Ties the trades together, so the result line's Undo can tell it is still the last thing done. */
@@ -146,20 +146,24 @@ export interface BulkOutcome {
 /**
  * Takes every position to one named destination.
  *
- * Nothing here optimises or allocates: each row is asked for the same column it already shows,
- * and because a trade swaps cash for shares without moving total account value, no row's answer
- * depends on what happened to another. The only thing shared between rows is the cash, and only
- * on the buy side, which is what the rules below are about.
+ * Nothing here optimises, allocates, or funds. Each row is asked for the same column it already
+ * shows and lands on it, in the order the table lists them.
  *
- * **Sells run first**, since their proceeds are what funds the buys. **Buys run widest gap
- * first**, in dollars — where the drift is worst is where short cash should go. **A buy that the
- * cash cannot cover completely is skipped rather than part-filled**: a half-filled buy to a lot
- * lands on a number that is not a lot, which is the one thing these buttons exist to avoid. The
- * skipped rows keep their own buttons in the table, one click each.
+ * **The cash is allowed to go negative, and no buy is ever cut short to protect it.** An earlier
+ * version ran the sells first so their proceeds could fund the buys, ordered the buys widest gap
+ * first, and skipped any buy the remaining cash could not cover whole. That was the tool deciding
+ * what to liquidate and in what order — which is the advisor's decision, not this program's. He
+ * would rather see every position on its number and a cash line reading -$40,000, then choose for
+ * himself what to sell and how much of it, than have the tool spend down to zero in an order it
+ * invented and quietly leave three positions behind.
  *
- * Buying is allowed to take cash below its own floor, and says so afterwards rather than stopping
- * short — the same choice the per-row "Spend the cash" button makes, which will knowingly pass a
- * position's ceiling and states where it lands.
+ * With nothing competing for the cash, order stops mattering: a trade swaps cash for shares
+ * without moving total account value, so no row's destination depends on what any other row did.
+ * Table order is therefore the honest one, and every row that has somewhere to go, goes.
+ *
+ * Sells still happen — a position sitting above the destination comes down to it, because that is
+ * where its own column points. What no longer happens is selling *because a different row needs
+ * the money*.
  */
 export function tradeAll(
   state: ExplorerState,
@@ -168,10 +172,11 @@ export function tradeAll(
   const batch = `b${state.nextId}`;
   const startedInsideCashBand = cashPct(state.portfolio) >= state.portfolio.cashFloor;
 
+  /* Never clamped to cash: that is the whole point of these buttons. */
   const plan = (p: Portfolio, s: Stock) =>
     destination === 'target'
-      ? planToTarget(p, s)
-      : planToLot(p, s, destination === 'lot-high' ? 'high' : 'low');
+      ? planToTarget(p, s, { clampToCash: false })
+      : planToLot(p, s, destination === 'lot-high' ? 'high' : 'low', { clampToCash: false });
 
   /* Destinations are read once, off the portfolio as it stands. They do not move as trades land,
      so re-reading them mid-run would answer the same thing more slowly. */
@@ -180,27 +185,17 @@ export function tradeAll(
     goal: destinationShares(state.portfolio, s, destination),
   }));
 
-  const moving = rows.filter((r) => r.goal !== null && r.goal !== r.stock.shares);
-  const sells = moving.filter((r) => r.goal! < r.stock.shares);
-  const buys = moving
-    .filter((r) => r.goal! > r.stock.shares)
-    .sort((a, b) => (b.goal! - b.stock.shares) * b.stock.price - (a.goal! - a.stock.shares) * a.stock.price);
-
   let next = state;
   let traded = 0;
-  let skippedForCash = 0;
 
-  for (const row of [...sells, ...buys]) {
+  for (const row of rows) {
+    if (row.goal === null || row.goal === row.stock.shares) continue;
+
     const live = next.portfolio.stocks.find((s) => s.id === row.stock.id);
     if (!live) continue;
 
     const trade = plan(next.portfolio, live);
-    // Null on a buy means the cash will not stretch to a single share; partial means not to all
-    // of them. Either way the row is left for its own button.
-    if (!trade || trade.partial) {
-      skippedForCash += 1;
-      continue;
-    }
+    if (!trade) continue;
 
     next = applyTrade(next, trade, batch);
     traded += 1;
@@ -213,7 +208,7 @@ export function tradeAll(
       traded,
       settled: rows.filter((r) => r.goal !== null && r.goal === r.stock.shares).length,
       noDestination: rows.filter((r) => r.goal === null).length,
-      skippedForCash,
+      cashAfter: next.portfolio.cash,
       belowCashFloor:
         startedInsideCashBand && cashPct(next.portfolio) < next.portfolio.cashFloor,
       batch,

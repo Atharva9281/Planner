@@ -200,9 +200,15 @@ export function cashStatus(p: Portfolio): CashStatus {
   return 'ok';
 }
 
-/** Whole shares the idle cash can pay for at this price. */
+/**
+ * Whole shares the idle cash can pay for at this price.
+ *
+ * Floored at zero, because the universal buttons can leave the cash negative and a balance in the
+ * red buys nothing — it does not buy a negative number of shares. Without the floor the raw-room
+ * strip reported "-186 sh" as what the cash affords, which is not a quantity anyone can act on.
+ */
 export function affordableShares(p: Portfolio, s: Stock): number {
-  return s.price > 0 ? Math.floor(p.cash / s.price) : 0;
+  return s.price > 0 ? Math.max(0, Math.floor(p.cash / s.price)) : 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -271,6 +277,21 @@ const plan = (
   };
 };
 
+export interface PlanOptions {
+  /**
+   * Whether a buy is cut down to what the idle cash can pay for.
+   *
+   * On by default, which is how every per-row button behaves: one position at a time, where
+   * "spend what is actually there" is the question being asked.
+   *
+   * The universal buttons turn it off. Deciding what to sell to fund a buy is the advisor's call
+   * and nobody else's, so those buttons land every position on its column and let the cash go
+   * wherever it goes — negative included. The advisor then raises what he wants, from whatever he
+   * chooses, rather than the tool quietly picking for him.
+   */
+  clampToCash?: boolean;
+}
+
 /**
  * Trades to a share count the table is already showing, in whichever direction reaches it.
  *
@@ -281,14 +302,21 @@ const plan = (
  * when pressed, because the handler underneath was a buy. Reachable in the worked example, where
  * NVDA holds 280 against a lowest lot of 300 and the green BUY there never fired.
  *
- * Cash clamps a buy and the fill is reported as partial; a sell is never clamped.
+ * Cash clamps a buy unless the caller says otherwise, and a clamped fill is reported as partial.
+ * A sell is never clamped in either direction.
  */
-function toDestination(p: Portfolio, s: Stock, goal: number, side: string): TradePlan | null {
+function toDestination(
+  p: Portfolio,
+  s: Stock,
+  goal: number,
+  side: string,
+  { clampToCash = true }: PlanOptions = {},
+): TradePlan | null {
   const delta = goal - s.shares;
   if (delta === 0) return null;
 
   if (delta > 0) {
-    const buy = Math.min(delta, affordableShares(p, s));
+    const buy = clampToCash ? Math.min(delta, affordableShares(p, s)) : delta;
     if (buy <= 0) return null;
     return plan(s, 'BUY', buy, goal, buy < delta, `buy up to ${side}`);
   }
@@ -297,7 +325,12 @@ function toDestination(p: Portfolio, s: Stock, goal: number, side: string): Trad
 }
 
 /** The nearest round lot inside one of the band's edges. */
-export function planToLot(p: Portfolio, s: Stock, edge: LotEdge): TradePlan | null {
+export function planToLot(
+  p: Portfolio,
+  s: Stock,
+  edge: LotEdge,
+  options: PlanOptions = {},
+): TradePlan | null {
   if (!isTradeable(s) || !lotRounds(s) || s.price <= 0) return null;
 
   const goal =
@@ -309,6 +342,7 @@ export function planToLot(p: Portfolio, s: Stock, edge: LotEdge): TradePlan | nu
     s,
     goal,
     `the lot nearest this stock's own ${bound}% ${edge === 'high' ? 'ceiling' : 'floor'}`,
+    options,
   );
 }
 
@@ -462,7 +496,11 @@ export function planToShares(p: Portfolio, s: Stock, targetShares: number): Trad
  * The model's own answer for this row: the nearest clean lot when its weight lands inside the
  * band, otherwise the raw share count.
  */
-export function planToTarget(p: Portfolio, s: Stock): TradePlan | null {
+export function planToTarget(
+  p: Portfolio,
+  s: Stock,
+  options: PlanOptions = {},
+): TradePlan | null {
   if (!isTradeable(s) || s.price <= 0) return null;
 
   const lt = lotAwareTarget(p, s);
@@ -473,5 +511,6 @@ export function planToTarget(p: Portfolio, s: Stock): TradePlan | null {
     lt.isLot
       ? 'the lot-aware target, a clean lot'
       : 'the target, raw — no nearby lot fits inside the band',
+    options,
   );
 }

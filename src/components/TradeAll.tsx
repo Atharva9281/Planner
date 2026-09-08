@@ -1,4 +1,5 @@
 import { BulkOutcome } from '@/lib/actions';
+import { money } from '@/lib/format';
 import { Destination } from '@/lib/types';
 
 /**
@@ -9,6 +10,10 @@ import { Destination } from '@/lib/types';
  * allocated — the number each position lands on is the number already printed in that column —
  * which is why these can be buttons at all rather than a plan to review.
  */
+/** Said on all three, since the cash rule is the same one whichever destination is pressed. */
+const CASH_HINT =
+  ' Every position lands on its number whether or not the cash covers it — if the buying runs the cash negative, the line above the table says by how much, and what to sell to raise it is your call.';
+
 const CHOICES: { destination: Destination; label: string; hint: string }[] = [
   {
     destination: 'lot-low',
@@ -57,7 +62,7 @@ export function TradeAllButtons({
           title={
             disabled
               ? 'A position has no price, so its share counts cannot be worked out. Give it one first.'
-              : c.hint
+              : c.hint + CASH_HINT
           }
           onClick={() => onTradeAll(c.destination)}
         >
@@ -71,9 +76,11 @@ export function TradeAllButtons({
 /**
  * What the press did, in one line, with the way back beside it.
  *
- * Every count here is a position the button did *not* move, which is the half a bulk action has
- * to be honest about: a row left alone because it has no lot rule reads as a bug unless the line
- * says otherwise.
+ * Two things it has to be honest about. The counts are positions the button did *not* move — a
+ * row left alone because it has no lot rule reads as a bug unless the line says otherwise. And
+ * the cash, which these buttons will knowingly run negative: the shortfall is stated in dollars,
+ * because that figure is the advisor's next decision. It is what he has to raise, and the whole
+ * reason the tool does not raise it for him is that only he knows which holding should go.
  */
 export function TradeAllResult({
   outcome,
@@ -90,9 +97,9 @@ export function TradeAllResult({
   const notes = [
     outcome.settled > 0 && `${outcome.settled} already there`,
     outcome.noDestination > 0 && `${outcome.noDestination} with no lot to trade to`,
-    outcome.skippedForCash > 0 &&
-      `${outcome.skippedForCash} skipped, the cash would not cover the whole move`,
   ].filter(Boolean) as string[];
+
+  const short = outcome.cashAfter < 0;
 
   return (
     <div
@@ -110,10 +117,16 @@ export function TradeAllResult({
           to {NAMES[outcome.destination]}
           {notes.length > 0 && ` · ${notes.join(' · ')}`}
         </span>
-        {outcome.belowCashFloor && (
+        {short ? (
           <span className="ml-2 font-semibold text-warn">
-            Cash is now below its {cashFloor}% floor.
+            Cash is short {money(Math.abs(outcome.cashAfter))}. Sell to raise it.
           </span>
+        ) : (
+          outcome.belowCashFloor && (
+            <span className="ml-2 font-semibold text-warn">
+              Cash is now below its {cashFloor}% floor.
+            </span>
+          )
         )}
       </div>
 
