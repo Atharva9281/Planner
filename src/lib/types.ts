@@ -68,6 +68,11 @@ export type TradeAction = 'BUY' | 'SELL';
  */
 export type LotEdge = 'low' | 'high';
 
+/**
+ * A destination every position can be asked for at once, named after the column it comes from:
+ * the lot-aware target, the lot nearest the ceiling, the lot nearest the floor.
+ */
+export type Destination = 'target' | 'lot-high' | 'lot-low';
 
 /** One executable trade, fully priced, before it is applied to the portfolio. */
 export interface TradePlan {
@@ -109,6 +114,14 @@ export interface LogEntry {
   pctAfter: number;
   /** The off-model holding this sale removed, kept whole so undo can restore it exactly. */
   restore?: OffModelHolding;
+  /**
+   * Set when this trade was one of many made by a single press of a universal button, and shared
+   * by every trade that press produced.
+   *
+   * Undo works on it as one thing. A button that trades eighteen positions and then needs
+   * eighteen presses to take back is not a button anyone would risk pressing.
+   */
+  batch?: string;
 }
 
 /** The starting position, held separately so "Reset this stock" has something honest to return to. */

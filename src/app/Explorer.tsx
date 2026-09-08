@@ -14,10 +14,12 @@ import LotAwareTable from '@/components/LotAwareTable';
 import ModelModal from '@/components/ModelModal';
 import Orders from '@/components/Orders';
 import ImportDialog from '@/components/import/ImportDialog';
+import { TradeAllButtons, TradeAllResult } from '@/components/TradeAll';
 import {
   addOffModel,
   addStock,
   applyTrade,
+  BulkOutcome,
   clearAll,
   removeOffModel,
   removeStock,
@@ -29,7 +31,9 @@ import {
   setOffModelField,
   setStockField,
   setStockShares,
+  tradeAll,
   undoLast,
+  undoSize,
 } from '@/lib/actions';
 import { ParsedImport } from '@/lib/import/types';
 import { netOrders } from '@/lib/orders';
@@ -42,7 +46,7 @@ import {
   planToTarget,
   unpricedPositions,
 } from '@/lib/engine';
-import { ExplorerState, Portfolio, Stock, TradePlan } from '@/lib/types';
+import { Destination, ExplorerState, Portfolio, Stock, TradePlan } from '@/lib/types';
 import { useRowCollapse } from '@/lib/useRowCollapse';
 import { downloadTradeLog } from '@/lib/xlsx/download';
 
@@ -66,6 +70,8 @@ export default function Explorer({ slot }: { slot: Slot }) {
   const [pendingImport, setPendingImport] = useState<ParsedImport | null>(null);
   /** A pending discard, held until the advisor confirms it. Null when nothing is being asked. */
   const [confirming, setConfirming] = useState<null | 'clear'>(null);
+  /** What the last press of a universal button did. Cleared by an undo, a reset, or a new press. */
+  const [bulk, setBulk] = useState<BulkOutcome | null>(null);
 
   const { portfolio, baseline, log } = state;
   const isEmpty = portfolio.stocks.length === 0 && portfolio.offModel.length === 0;
@@ -119,6 +125,9 @@ export default function Explorer({ slot }: { slot: Slot }) {
     return ids;
   }, [log, portfolio.stocks, baseline.shares]);
 
+  /** How many trades the next undo would take back: one, or a whole press of a universal button. */
+  const undoDepth = undoSize(state);
+
   /** How many rows the model is still asking something of — the shut panel's whole story. */
   const pending = useMemo(
     () => portfolio.stocks.filter((s) => needsDecision(portfolio, s)).length,
@@ -156,6 +165,24 @@ export default function Explorer({ slot }: { slot: Slot }) {
   const handleTradeTo = (stockId: string, targetShares: number) =>
     handlePlan(stockId, (p, s) => planToShares(p, s, targetShares));
 
+  /**
+   * One destination, every position. The rows it moves are pinned open for the same reason a
+   * single trade pins its own row: acting on something should not fold it away under the click.
+   */
+  const handleTradeAll = (destination: Destination) => {
+    const { state: next, outcome } = tradeAll(state, destination);
+    next.log
+      .filter((e) => e.batch === outcome.batch && e.stockId)
+      .forEach((e) => rowState.pin(e.stockId as string));
+    setState(next);
+    setBulk(outcome);
+  };
+
+  /** Undo and reset both invalidate whatever the last press reported, so the line goes with them. */
+  const handleUndo = () => {
+    setBulk(null);
+    setState(undoLast);
+  };
 
   const openModelWithNewStock = () => {
     setState(addStock);
@@ -220,17 +247,17 @@ export default function Explorer({ slot }: { slot: Slot }) {
             the tiles, which could not fit five figures and two buttons on one line. */}
         {!isEmpty && (
           <div className="flex flex-wrap gap-2">
-            <button
-              className="btn-outline"
-              disabled={log.length === 0}
-              onClick={() => setState(undoLast)}
-            >
-              Undo last action
+            <button className="btn-outline" disabled={log.length === 0} onClick={handleUndo}>
+              {/* A press of a universal button is one action, so say how much of one. */}
+              Undo last action{undoDepth > 1 ? ` (${undoDepth} trades)` : ''}
             </button>
             <button
               className="btn-outline"
               disabled={log.length === 0}
-              onClick={() => setState(resetAll)}
+              onClick={() => {
+                setBulk(null);
+                setState(resetAll);
+              }}
             >
               Reset everything to starting state
             </button>
@@ -276,8 +303,11 @@ export default function Explorer({ slot }: { slot: Slot }) {
             source={state.source}
             visible={stuck}
             canUndo={log.length > 0}
-            onUndo={() => setState(undoLast)}
-            onResetAll={() => setState(resetAll)}
+            onUndo={handleUndo}
+            onResetAll={() => {
+              setBulk(null);
+              setState(resetAll);
+            }}
             onEditHoldings={() => setOpenModal('holdings')}
             onEditModel={() => setOpenModal('model')}
           />
@@ -299,8 +329,22 @@ export default function Explorer({ slot }: { slot: Slot }) {
                   decisions are.
                 </p>
               }
-              actions={<CollapseAll collapse={rowState} />}
+              actions={
+                <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+                  <TradeAllButtons onTradeAll={handleTradeAll} disabled={unpriced.length > 0} />
+                  <CollapseAll collapse={rowState} />
+                </div>
+              }
             >
+              {bulk && (
+                <TradeAllResult
+                  outcome={bulk}
+                  cashFloor={portfolio.cashFloor}
+                  undoable={log[log.length - 1]?.batch === bulk.batch}
+                  onUndo={handleUndo}
+                />
+              )}
+
               <LotAwareTable
                 portfolio={portfolio}
                 resettable={resettable}

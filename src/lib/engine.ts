@@ -9,7 +9,7 @@
  * and whenever an off-model holding is sold. Nothing here caches a total.
  */
 
-import { LotEdge, OffModelHolding, Portfolio, Stock, TradePlan } from './types';
+import { Destination, LotEdge, OffModelHolding, Portfolio, Stock, TradePlan } from './types';
 
 export const LOT = 100;
 
@@ -326,6 +326,24 @@ export function planToBandEdge(p: Portfolio, s: Stock, edge: LotEdge): TradePlan
     goal,
     `this stock's own ${bound}% ${edge === 'high' ? 'ceiling' : 'floor'}`,
   );
+}
+
+/**
+ * The share count a named destination comes to on this row, or null where it does not exist:
+ * a position the tool does not trade, one with no price to convert a weight into shares, or a
+ * band-edge lot on a holding the 100-share rule does not apply to.
+ *
+ * Every one of these is fixed the moment the files load. A trade swaps cash for shares, so total
+ * account value does not move, so no destination on any other row moves either — which is what
+ * makes asking for all of them at once a sum of independent answers rather than a plan.
+ */
+export function destinationShares(p: Portfolio, s: Stock, d: Destination): number | null {
+  if (!isTradeable(s) || s.price <= 0) return null;
+  if (d === 'target') return lotAwareTarget(p, s).goal;
+  if (!lotRounds(s)) return null;
+  return d === 'lot-high'
+    ? highestLotWithinBand(p, s).highestLot
+    : lowestLotWithinBand(p, s).lowestLot;
 }
 
 /* ------------------------------------------------------------------ */

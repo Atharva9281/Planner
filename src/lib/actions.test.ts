@@ -14,10 +14,18 @@ import {
   setOffModelField,
   setStockField,
   setStockShares,
+  tradeAll,
   undoLast,
+  undoSize,
 } from './actions';
-import { sampleState } from './defaultState';
-import { planToBandEdge, planToLot, planToTarget, totalValue } from './engine';
+import { samplePortfolio, sampleState } from './defaultState';
+import {
+  destinationShares,
+  planToBandEdge,
+  planToLot,
+  planToTarget,
+  totalValue,
+} from './engine';
 import { ExplorerState } from './types';
 
 const stockOf = (state: ExplorerState, sym: string) =>
@@ -296,3 +304,142 @@ describe('reset everything', () => {
   });
 });
 
+describe('taking every position to one destination', () => {
+  it('lands each row on the same share count its own column shows', () => {
+    const before = sampleState();
+    const { state, outcome } = tradeAll(before, 'target');
+
+    for (const s of state.portfolio.stocks) {
+      const goal = destinationShares(before.portfolio, s, 'target')!;
+      expect(s.shares).toBe(goal);
+    }
+    expect(outcome.traded).toBe(5);
+    expect(outcome.skippedForCash).toBe(0);
+    expect(outcome.noDestination).toBe(0);
+  });
+
+  it('leaves total account value where it was, as any trade does', () => {
+    const before = sampleState();
+    const { state } = tradeAll(before, 'lot-high');
+    expect(totalValue(state.portfolio)).toBeCloseTo(totalValue(before.portfolio), 6);
+  });
+
+  it('reports rows that were already sitting on the destination', () => {
+    const first = tradeAll(sampleState(), 'target');
+    // Everything is on target now, so a second press has nothing left to do.
+    const second = tradeAll(first.state, 'target');
+    expect(second.outcome.traded).toBe(0);
+    expect(second.outcome.settled).toBe(5);
+    expect(second.state.log).toHaveLength(first.state.log.length);
+  });
+
+  it('skips a row whole rather than part-filling it when the cash runs short', () => {
+    /* X wants ten more shares at $500 and the cash covers three. Y is fixed income — held and
+       counted, never traded — so nothing sells to rescue the buy. */
+    const state: ExplorerState = {
+      ...sampleState(),
+      portfolio: {
+        stocks: [
+          { id: 'a', sym: 'X', price: 500, target: 60, bandMin: 50, bandMax: 70, shares: 10 },
+          {
+            id: 'b',
+            sym: 'Y',
+            price: 100,
+            target: 35,
+            bandMin: 30,
+            bandMax: 40,
+            shares: 100,
+            tradeable: false,
+          },
+        ],
+        cash: 1500,
+        cashFloor: 3,
+        cashTarget: 5,
+        cashCeiling: 8,
+        offModel: [],
+      },
+      log: [],
+    };
+
+    const { state: after, outcome } = tradeAll(state, 'target');
+    expect(outcome.skippedForCash).toBeGreaterThan(0);
+    expect(after.log.every((e) => !e.partial)).toBe(true);
+    // The row it could not fund is untouched, not left on a number that is not its destination.
+    expect(after.portfolio.stocks.find((s) => s.sym === 'X')!.shares).toBe(10);
+  });
+
+  it('has no destination for a holding the lot rule does not apply to', () => {
+    const state: ExplorerState = {
+      ...sampleState(),
+      portfolio: {
+        ...samplePortfolio(),
+        stocks: [
+          {
+            id: 'f',
+            sym: 'FUND',
+            price: 50,
+            target: 10,
+            bandMin: 8,
+            bandMax: 12,
+            shares: 100,
+            lotRounding: false,
+          },
+        ],
+      },
+      log: [],
+    };
+
+    expect(tradeAll(state, 'lot-high').outcome).toMatchObject({ noDestination: 1, traded: 0 });
+    // The lot-aware target falls back to the raw count for it, so that destination does exist.
+    expect(tradeAll(state, 'target').outcome.noDestination).toBe(0);
+  });
+
+  it('says when the buying took cash below its own floor', () => {
+    const { outcome } = tradeAll(sampleState(), 'lot-high');
+    expect(outcome.belowCashFloor).toBe(true);
+  });
+
+  it('sells first, so the proceeds are there to fund the buys', () => {
+    // NVDA can only reach its upper lot on money MSFT's sale raises.
+    const start: ExplorerState = {
+      ...sampleState(),
+      portfolio: { ...samplePortfolio(), cash: 0 },
+      log: [],
+    };
+    const { state, outcome } = tradeAll(start, 'target');
+
+    expect(state.log[0].action).toBe('SELL');
+    expect(outcome.traded).toBeGreaterThan(1);
+  });
+});
+
+describe('undoing a whole press', () => {
+  it('takes back every trade one universal button made, in one go', () => {
+    const before = sampleState();
+    const { state } = tradeAll(before, 'target');
+    expect(state.log.length).toBe(5);
+
+    const back = undoLast(state);
+    expect(back.log).toHaveLength(0);
+    expect(back.portfolio.cash).toBeCloseTo(before.portfolio.cash, 6);
+    for (const s of back.portfolio.stocks) {
+      expect(s.shares).toBe(before.portfolio.stocks.find((x) => x.id === s.id)!.shares);
+    }
+  });
+
+  it('leaves earlier single trades alone', () => {
+    const one = buy(sampleState(), 'MU');
+    const { state } = tradeAll(one, 'lot-high');
+
+    const back = undoLast(state);
+    expect(back.log).toHaveLength(1);
+    expect(back.log[0].batch).toBeUndefined();
+    expect(stockOf(back, 'MU').shares).toBe(1000);
+  });
+
+  it('counts what the next undo would take back', () => {
+    expect(undoSize(sampleState())).toBe(0);
+    expect(undoSize(buy(sampleState(), 'MU'))).toBe(1);
+    expect(undoSize(tradeAll(sampleState(), 'target').state)).toBe(5);
+  });
+});

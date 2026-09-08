@@ -4,9 +4,17 @@
  * history that has to be maintained by hand.
  */
 
-import { cashPct, offModelValue } from './engine';
+import { cashPct, destinationShares, offModelValue, planToLot, planToTarget } from './engine';
 import { baselineFrom, emptyState, sampleState } from './defaultState';
-import { ExplorerState, LogEntry, OffModelHolding, Portfolio, Stock, TradePlan } from './types';
+import {
+  Destination,
+  ExplorerState,
+  LogEntry,
+  OffModelHolding,
+  Portfolio,
+  Stock,
+  TradePlan,
+} from './types';
 
 const withPortfolio = (state: ExplorerState, portfolio: Portfolio): ExplorerState => ({
   ...state,
@@ -22,8 +30,17 @@ const mapStock = (p: Portfolio, id: string, fn: (s: Stock) => Stock): Portfolio 
 /* trades                                                              */
 /* ------------------------------------------------------------------ */
 
-/** Applies a planned trade and records it. The plan already carries every number it needs. */
-export function applyTrade(state: ExplorerState, plan: TradePlan): ExplorerState {
+/**
+ * Applies a planned trade and records it. The plan already carries every number it needs.
+ *
+ * `batch` marks trades that arrived together from one press of a universal button, so undo can
+ * take the whole press back at once.
+ */
+export function applyTrade(
+  state: ExplorerState,
+  plan: TradePlan,
+  batch?: string,
+): ExplorerState {
   const before = state.portfolio;
   const cashBefore = before.cash;
   const pctBefore = cashPct(before);
@@ -55,6 +72,7 @@ export function applyTrade(state: ExplorerState, plan: TradePlan): ExplorerState
     cashAfter: portfolio.cash,
     pctBefore,
     pctAfter: cashPct(portfolio),
+    ...(batch ? { batch } : {}),
   };
 
   return { ...state, portfolio, log: [...state.log, entry], nextId: state.nextId + 1 };
@@ -105,10 +123,134 @@ export function sellOffModel(state: ExplorerState, id: string): ExplorerState {
 }
 
 /* ------------------------------------------------------------------ */
+/* one destination, every position                                     */
+/* ------------------------------------------------------------------ */
+
+/** What one press of a universal button did, in the terms the result line reports it. */
+export interface BulkOutcome {
+  destination: Destination;
+  /** Positions that moved. */
+  traded: number;
+  /** Positions already sitting on the destination, so there was nothing to do. */
+  settled: number;
+  /** Positions this destination does not exist for: no lot rule, no price, or never traded here. */
+  noDestination: number;
+  /** Positions passed over because the cash could not fund the whole move. */
+  skippedForCash: number;
+  /** True when the buying took cash below its own floor, having started at or above it. */
+  belowCashFloor: boolean;
+  /** Ties the trades together, so the result line's Undo can tell it is still the last thing done. */
+  batch: string;
+}
+
+/**
+ * Takes every position to one named destination.
+ *
+ * Nothing here optimises or allocates: each row is asked for the same column it already shows,
+ * and because a trade swaps cash for shares without moving total account value, no row's answer
+ * depends on what happened to another. The only thing shared between rows is the cash, and only
+ * on the buy side, which is what the rules below are about.
+ *
+ * **Sells run first**, since their proceeds are what funds the buys. **Buys run widest gap
+ * first**, in dollars — where the drift is worst is where short cash should go. **A buy that the
+ * cash cannot cover completely is skipped rather than part-filled**: a half-filled buy to a lot
+ * lands on a number that is not a lot, which is the one thing these buttons exist to avoid. The
+ * skipped rows keep their own buttons in the table, one click each.
+ *
+ * Buying is allowed to take cash below its own floor, and says so afterwards rather than stopping
+ * short — the same choice the per-row "Spend the cash" button makes, which will knowingly pass a
+ * position's ceiling and states where it lands.
+ */
+export function tradeAll(
+  state: ExplorerState,
+  destination: Destination,
+): { state: ExplorerState; outcome: BulkOutcome } {
+  const batch = `b${state.nextId}`;
+  const startedInsideCashBand = cashPct(state.portfolio) >= state.portfolio.cashFloor;
+
+  const plan = (p: Portfolio, s: Stock) =>
+    destination === 'target'
+      ? planToTarget(p, s)
+      : planToLot(p, s, destination === 'lot-high' ? 'high' : 'low');
+
+  /* Destinations are read once, off the portfolio as it stands. They do not move as trades land,
+     so re-reading them mid-run would answer the same thing more slowly. */
+  const rows = state.portfolio.stocks.map((s) => ({
+    stock: s,
+    goal: destinationShares(state.portfolio, s, destination),
+  }));
+
+  const moving = rows.filter((r) => r.goal !== null && r.goal !== r.stock.shares);
+  const sells = moving.filter((r) => r.goal! < r.stock.shares);
+  const buys = moving
+    .filter((r) => r.goal! > r.stock.shares)
+    .sort((a, b) => (b.goal! - b.stock.shares) * b.stock.price - (a.goal! - a.stock.shares) * a.stock.price);
+
+  let next = state;
+  let traded = 0;
+  let skippedForCash = 0;
+
+  for (const row of [...sells, ...buys]) {
+    const live = next.portfolio.stocks.find((s) => s.id === row.stock.id);
+    if (!live) continue;
+
+    const trade = plan(next.portfolio, live);
+    // Null on a buy means the cash will not stretch to a single share; partial means not to all
+    // of them. Either way the row is left for its own button.
+    if (!trade || trade.partial) {
+      skippedForCash += 1;
+      continue;
+    }
+
+    next = applyTrade(next, trade, batch);
+    traded += 1;
+  }
+
+  return {
+    state: next,
+    outcome: {
+      destination,
+      traded,
+      settled: rows.filter((r) => r.goal !== null && r.goal === r.stock.shares).length,
+      noDestination: rows.filter((r) => r.goal === null).length,
+      skippedForCash,
+      belowCashFloor:
+        startedInsideCashBand && cashPct(next.portfolio) < next.portfolio.cashFloor,
+      batch,
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* undo and reset                                                      */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Takes back the last thing that happened — where a press of a universal button counts as one
+ * thing, however many positions it moved.
+ *
+ * A batch is always a contiguous run at the end of the log, because it is written in one go and
+ * anything undone since has already come off the end.
+ */
 export function undoLast(state: ExplorerState): ExplorerState {
+  const last = state.log[state.log.length - 1];
+  if (!last) return state;
+  if (!last.batch) return undoOne(state);
+
+  let next = state;
+  while (next.log[next.log.length - 1]?.batch === last.batch) next = undoOne(next);
+  return next;
+}
+
+/** How many trades the next Undo would take back, so the button can say so. */
+export function undoSize(state: ExplorerState): number {
+  const last = state.log[state.log.length - 1];
+  if (!last) return 0;
+  if (!last.batch) return 1;
+  return state.log.filter((e) => e.batch === last.batch).length;
+}
+
+function undoOne(state: ExplorerState): ExplorerState {
   if (state.log.length === 0) return state;
 
   const entry = state.log[state.log.length - 1];
