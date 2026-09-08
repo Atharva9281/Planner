@@ -37,7 +37,6 @@ export default function ImportDialog({
   const [parsed] = useState<ParsedImport | null>(initial ?? null);
   const [resolution, setResolution] = useState<Resolution>(() => ({
     modelName: initial ? pickModel(initial)?.name : undefined,
-    keepOffModel: true,
     /* The previous account's prices, seeded so the fields open filled in rather than as twenty
        empty boxes. Harmless where this account holds the position: `applyImport` reads the
        holdings file first and only falls back to these, so real market data still wins. */
@@ -203,38 +202,29 @@ export default function ImportDialog({
           </section>
 
           {/* ---------- everything else in the account ---------- */}
+          {/* Stated, not asked.
+              This used to be a "keep or drop" tick, which offered a choice nobody wants: neither
+              option was *sell*, and dropping quietly takes real money out of total account value,
+              shrinking every band with it. The account owns these either way. Whether to sell
+              them is a real decision, and it is made on the page afterwards, where the panel that
+              lists them offers it in one press. */}
           {offModel.length > 0 && (
             <section>
               <div className="modal-section">
-                <h3>Everything else in the account</h3>
+                <h3>Held, but not in the model</h3>
+                <span className="font-mono text-[12.5px] tabular-nums text-ink-soft">
+                  {money(offModel.reduce((n, h) => n + h.shares * h.price, 0))}
+                </span>
               </div>
-              <div className="flex flex-col gap-2">
-                {offModel.length > 0 && (
-                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line px-3 py-2.5">
-                    <input
-                      type="checkbox"
-                      className="mt-1 accent-accent"
-                      checked={resolution.keepOffModel}
-                      onChange={(e) =>
-                        setResolution((r) => ({ ...r, keepOffModel: e.target.checked }))
-                      }
-                    />
-                    <span className="flex-1 text-[13.5px] leading-relaxed">
-                      Keep{' '}
-                      <b>
-                        {offModel.length} holding{offModel.length === 1 ? '' : 's'}
-                      </b>{' '}
-                      the model has no row for
-                      <span className="sub">
-                        {offModel.map((h) => h.sym).join(', ')} ·{' '}
-                        {money(offModel.reduce((n, h) => n + h.shares * h.price, 0))}. They count
-                        toward account value and can be sold to raise cash.
-                      </span>
-                    </span>
-                  </label>
-                )}
-
-              </div>
+              <p className="max-w-2xl text-[13.5px] leading-relaxed text-ink-soft">
+                <b className="text-ink">
+                  {offModel.length} holding{offModel.length === 1 ? '' : 's'}
+                </b>{' '}
+                the model has no row for: {offModel.map((h) => h.sym).join(', ')}. They come in
+                with the account and count toward its value, so the bands are measured against the
+                whole of it. The model is the mandate, so the usual answer is to sell them — there
+                is a Sell all button on their own panel under the table once this loads.
+              </p>
             </section>
           )}
 

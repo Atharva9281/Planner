@@ -95,8 +95,6 @@ export interface ParsedImport {
  */
 export interface Resolution {
   modelName?: string;
-  /** Held symbols outside the model: keep as an off-model holding, or drop. */
-  keepOffModel: boolean;
   /**
    * Prices typed in the preview, by symbol, for model rows the holdings file cannot price.
    * Never consulted for a held position: market data in the file always wins over a typed figure.

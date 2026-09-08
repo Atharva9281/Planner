@@ -9,6 +9,7 @@ import {
   removeStock,
   resetAll,
   resetStock,
+  sellAllOffModel,
   sellOffModel,
   setCash,
   setOffModelField,
@@ -151,6 +152,67 @@ describe('off-model holdings', () => {
 
     expect(after.portfolio.offModel).toEqual([{ id: expect.any(String), sym: 'OTHER', shares: 100, price: 50 }]);
     expect(after.portfolio.cash).toBeCloseTo(38000, 6);
+  });
+
+  it('sells every one it can in a single press, and leaves fixed income alone', () => {
+    /* The model is the mandate, so a holding it has no row for is normally sold. Fixed income is
+       the exception on both sides of the model: counted, never traded. */
+    let state = withOther(100, 50);
+    state = addOffModel(state);
+    const second = state.portfolio.offModel[1].id;
+    state = setOffModelField(setOffModelField(state, second, 'shares', 10), second, 'price', 100);
+
+    state = addOffModel(state);
+    const bond = state.portfolio.offModel[2].id;
+    state = setOffModelField(setOffModelField(state, bond, 'shares', 40), bond, 'price', 25);
+    state = {
+      ...state,
+      portfolio: {
+        ...state.portfolio,
+        offModel: state.portfolio.offModel.map((h) =>
+          h.id === bond ? { ...h, tradeable: false } : h,
+        ),
+      },
+    };
+
+    const before = totalValue(state.portfolio);
+    const { state: after, outcome } = sellAllOffModel(state);
+
+    expect(outcome).toMatchObject({ sold: 2, proceeds: 6000, heldNotTraded: 1 });
+    expect(after.portfolio.offModel.map((h) => h.id)).toEqual([bond]);
+    expect(after.portfolio.cash).toBeCloseTo(38000 + 6000, 6);
+    // A sale swaps holdings for dollars, so the account total does not move.
+    expect(totalValue(after.portfolio)).toBeCloseTo(before, 6);
+  });
+
+  it('takes a whole press back in one undo', () => {
+    let state = withOther(100, 50);
+    state = addOffModel(state);
+    const second = state.portfolio.offModel[1].id;
+    state = setOffModelField(setOffModelField(state, second, 'shares', 10), second, 'price', 100);
+
+    const { state: sold } = sellAllOffModel(state);
+    expect(sold.log).toHaveLength(2);
+    expect(undoSize(sold)).toBe(2);
+
+    const back = undoLast(sold);
+    expect(back.log).toHaveLength(0);
+    expect(back.portfolio.offModel).toHaveLength(2);
+    expect(back.portfolio.cash).toBeCloseTo(38000, 6);
+  });
+
+  it('reports nothing sold when every holding is held-only', () => {
+    let state = withOther(100, 50);
+    state = {
+      ...state,
+      portfolio: {
+        ...state.portfolio,
+        offModel: state.portfolio.offModel.map((h) => ({ ...h, tradeable: false })),
+      },
+    };
+    const { state: after, outcome } = sellAllOffModel(state);
+    expect(outcome).toMatchObject({ sold: 0, proceeds: 0, heldNotTraded: 1 });
+    expect(after).toBe(state);
   });
 
   it('refuses to remove a holding that carries value, so no band moves without a trade', () => {

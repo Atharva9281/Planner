@@ -83,7 +83,12 @@ export function applyTrade(
  * Sells an off-model holding in full. The whole holding is kept on the log entry so undo can put
  * it back exactly as it was, rather than reconstructing its price by dividing proceeds by shares.
  */
-export function sellOffModel(state: ExplorerState, id: string): ExplorerState {
+export function sellOffModel(
+  state: ExplorerState,
+  id: string,
+  /** Set when this sale is one of many from a single press, so undo takes them back together. */
+  batch?: string,
+): ExplorerState {
   const holding = state.portfolio.offModel.find((h) => h.id === id);
   // Fixed income is held and counted here, never traded, on either side of the model.
   if (!holding || holding.tradeable === false) return state;
@@ -118,9 +123,66 @@ export function sellOffModel(state: ExplorerState, id: string): ExplorerState {
     pctBefore,
     pctAfter: cashPct(portfolio),
     restore: holding,
+    ...(batch ? { batch } : {}),
   };
 
   return { ...state, portfolio, log: [...state.log, entry], nextId: state.nextId + 1 };
+}
+
+/** What one press of "Sell all" on the off-model list did. */
+export interface OffModelSale {
+  /** Holdings sold. */
+  sold: number;
+  /** What they raised, added to cash. */
+  proceeds: number;
+  /** Fixed income and anything else held but never traded, which stays where it is. */
+  heldNotTraded: number;
+  batch: string;
+}
+
+/**
+ * Sells every off-model holding that can be sold, in one press.
+ *
+ * A position the model has no row for is a position the advisor has decided not to hold: the
+ * model is the mandate, and anything outside it is there by accident of history — a transfer in,
+ * a legacy holding, something bought outside the sleeve. Selling it is the normal answer, and
+ * making him do it one row at a time in a dialog buried under "Edit starting holdings" is what
+ * kept the normal answer out of sight.
+ *
+ * Fixed income is passed over rather than sold. It is held and counted on either side of the
+ * model, and this button does not become the one place that rule stops applying.
+ *
+ * Nothing here decides *whether* to sell. The press is the decision, and Undo takes the whole
+ * press back at once.
+ */
+export function sellAllOffModel(
+  state: ExplorerState,
+): { state: ExplorerState; outcome: OffModelSale } {
+  const batch = `b${state.nextId}`;
+  const before = state.portfolio.cash;
+
+  let next = state;
+  let sold = 0;
+
+  /* Read once off the list as it stands: `sellOffModel` removes the row it sells, so iterating
+     the live array would skip every other holding. */
+  for (const h of state.portfolio.offModel) {
+    if (h.tradeable === false || offModelValue(h) === 0) continue;
+    const after = sellOffModel(next, h.id, batch);
+    if (after === next) continue;
+    next = after;
+    sold += 1;
+  }
+
+  return {
+    state: next,
+    outcome: {
+      sold,
+      proceeds: next.portfolio.cash - before,
+      heldNotTraded: state.portfolio.offModel.filter((h) => h.tradeable === false).length,
+      batch,
+    },
+  };
 }
 
 /* ------------------------------------------------------------------ */

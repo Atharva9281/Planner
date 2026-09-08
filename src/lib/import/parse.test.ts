@@ -71,10 +71,7 @@ const holdingsSheet = (): SheetGrid => ({
   ],
 });
 
-const baseResolution = (over: Partial<Resolution> = {}): Resolution => ({
-  keepOffModel: true,
-  ...over,
-});
+const baseResolution = (over: Partial<Resolution> = {}): Resolution => ({ ...over });
 
 /* ------------------------------------------------------------------ */
 
@@ -326,13 +323,15 @@ describe('applying the import', () => {
     ]);
   });
 
-  it('keeps off-model holdings so they still count toward account value', () => {
+  it('always keeps off-model holdings, so they count toward account value', () => {
+    /* Never a choice at import. Dropping one takes real money out of the account total with no
+       sale behind it, and every band is a percentage of that total. What to do about them is
+       decided later, on the off-model panel, where selling is one press. */
     const kept = applyImport(parsed(), baseResolution());
     expect(kept.portfolio.offModel.map((h) => h.sym)).toContain('FLUD');
-
-    const dropped = applyImport(parsed(), baseResolution({ keepOffModel: false }));
-    expect(dropped.portfolio.offModel.map((h) => h.sym)).not.toContain('FLUD');
-    expect(totalValue(dropped.portfolio)).toBeLessThan(totalValue(kept.portfolio));
+    expect(totalValue(kept.portfolio)).toBeGreaterThan(
+      kept.portfolio.cash + kept.portfolio.stocks.reduce((n, s) => n + s.shares * s.price, 0),
+    );
   });
 
   it('leaves options out of account value entirely', () => {

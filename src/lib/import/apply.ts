@@ -43,18 +43,21 @@ export function applyImport(parsed: ParsedImport, resolution: Resolution): Explo
     lotRounding: row.lotRounding ?? classify(row.type ?? '') === 'tradeable',
   }));
 
-  // Anything held that the model has no row for, kept as an off-model holding so it still counts
-  // toward total account value and can be sold to raise cash.
-  const offModel: OffModelHolding[] =
-    resolution.keepOffModel && model
-      ? offModelSymbols(model, holdings).map((p) => ({
-          id: `o${seq++}`,
-          sym: p.sym,
-          shares: p.shares,
-          price: p.price,
-          tradeable: p.tradeable,
-        }))
-      : [];
+  /* Anything held that the model has no row for. Always kept, and never a question at import.
+     The account owns it either way, and dropping it would take real money out of total account
+     value with no sale behind it — which shrinks every band in the table, since a band is a
+     percentage of that total. On one real pair of files it was 18% of the account.
+     What to *do* about it is a separate decision, made later on screen: the model is the mandate,
+     so the normal answer is to sell, and the off-model panel offers that in one press. */
+  const offModel: OffModelHolding[] = model
+    ? offModelSymbols(model, holdings).map((p) => ({
+        id: `o${seq++}`,
+        sym: p.sym,
+        shares: p.shares,
+        price: p.price,
+        tradeable: p.tradeable,
+      }))
+    : [];
 
   /* A Cash and Equiv row is the balance whenever there is one. Without it the account has no
      balance on file — a new account, or the one export that omits the row — and the figure the

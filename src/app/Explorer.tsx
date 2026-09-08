@@ -12,6 +12,7 @@ import SkeletonWorkspace from '@/components/SkeletonWorkspace';
 import HoldingsModal from '@/components/HoldingsModal';
 import LotAwareTable from '@/components/LotAwareTable';
 import ModelModal from '@/components/ModelModal';
+import OffModelPanel from '@/components/OffModelPanel';
 import Orders from '@/components/Orders';
 import ImportDialog from '@/components/import/ImportDialog';
 import { TradeAllButtons, TradeAllResult } from '@/components/TradeAll';
@@ -21,10 +22,12 @@ import {
   applyTrade,
   BulkOutcome,
   clearAll,
+  OffModelSale,
   removeOffModel,
   removeStock,
   resetAll,
   resetStock,
+  sellAllOffModel,
   sellOffModel,
   setCash,
   setCashBand,
@@ -74,6 +77,8 @@ export default function Explorer({ slot }: { slot: Slot }) {
   const [confirming, setConfirming] = useState<null | 'clear'>(null);
   /** What the last press of a universal button did. Cleared by an undo, a reset, or a new press. */
   const [bulk, setBulk] = useState<BulkOutcome | null>(null);
+  /** The same, for the off-model list's "Sell all". */
+  const [sale, setSale] = useState<OffModelSale | null>(null);
 
   const { portfolio, baseline, log } = state;
   const isEmpty = portfolio.stocks.length === 0 && portfolio.offModel.length === 0;
@@ -181,9 +186,18 @@ export default function Explorer({ slot }: { slot: Slot }) {
     setBulk(outcome);
   };
 
+  /** Every off-model holding that can be sold, in one press, reported the same way. */
+  const handleSellAllOffModel = () => {
+    const { state: next, outcome } = sellAllOffModel(state);
+    if (outcome.sold === 0) return;
+    setState(next);
+    setSale(outcome);
+  };
+
   /** Undo and reset both invalidate whatever the last press reported, so the line goes with them. */
   const handleUndo = () => {
     setBulk(null);
+    setSale(null);
     setState(undoLast);
   };
 
@@ -259,6 +273,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
               disabled={log.length === 0}
               onClick={() => {
                 setBulk(null);
+                setSale(null);
                 setState(resetAll);
               }}
             >
@@ -311,6 +326,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
             onUndo={handleUndo}
             onResetAll={() => {
               setBulk(null);
+              setSale(null);
               setState(resetAll);
             }}
             onEditHoldings={() => setOpenModal('holdings')}
@@ -354,6 +370,18 @@ export default function Explorer({ slot }: { slot: Slot }) {
               />
             </Panel>
           </div>
+
+          {/* Directly under the model positions, because it is read as the second half of the same
+              question: here is what the mandate asks for, and here is what the account holds that
+              the mandate never mentioned. */}
+          <OffModelPanel
+            portfolio={portfolio}
+            sale={sale}
+            undoable={log[log.length - 1]?.batch === sale?.batch}
+            onSell={(id) => setState((cur) => sellOffModel(cur, id))}
+            onSellAll={handleSellAllOffModel}
+            onUndo={handleUndo}
+          />
 
           <Panel
             title="Orders to place"
