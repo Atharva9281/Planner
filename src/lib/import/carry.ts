@@ -26,10 +26,13 @@ export function carryModel(state: ExplorerState): CarriedModel | undefined {
 
   return {
     model: {
-      /* Never the account name. `source.label` is the account wherever the holdings file named
-         one, and calling a model after one of the accounts it serves is how it ends up looking
-         like that account's own. */
-      name: source?.modelName || 'Model carried over',
+      /* The real model name or nothing at all. Never the account name: `source.label` is the
+         account wherever the holdings file named one, and calling a model after one of the
+         accounts it serves is how it ends up looking like that account's own.
+         Empty rather than an invented placeholder, because `applyImport` falls back to the model
+         name for the account label — and a placeholder there put "Model carried over" in the
+         header where the account's name belongs. */
+      name: source?.modelName ?? '',
       rows: portfolio.stocks.map((s) => ({
         sym: s.sym,
         type: s.type,
@@ -65,7 +68,13 @@ export function carryModel(state: ExplorerState): CarriedModel | undefined {
 export function carriedAsImport(carried: CarriedModel): ParsedImport {
   return {
     models: [carried.model],
-    sheets: [{ name: `${carried.model.name} (carried over)`, read: 'model', rows: carried.model.rows.length }],
+    sheets: [
+      {
+        name: carried.model.name ? `${carried.model.name} (carried over)` : 'The model, carried over',
+        read: 'model',
+        rows: carried.model.rows.length,
+      },
+    ],
     warnings: [],
   };
 }

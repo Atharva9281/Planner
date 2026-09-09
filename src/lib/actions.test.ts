@@ -4,6 +4,7 @@ import {
   addStock,
   applyTrade,
   clearAll,
+  closeAccount,
   loadSample,
   removeOffModel,
   removeStock,
@@ -359,7 +360,7 @@ describe('reset everything', () => {
   });
 
   it('clears back to an empty portfolio only when asked', () => {
-    const cleared = clearAll(sampleState());
+    const cleared = clearAll();
     expect(cleared.portfolio.stocks).toHaveLength(0);
     expect(cleared.portfolio.cash).toBe(0);
     expect(loadSample().portfolio.stocks).toHaveLength(5);
@@ -367,7 +368,7 @@ describe('reset everything', () => {
 
   it('keeps the model on the way out, so the next account can reuse it', () => {
     const before = sampleState();
-    const carried = clearAll(before).carried!;
+    const carried = closeAccount(before).carried!;
 
     expect(carried.model.rows.map((r) => r.sym)).toEqual(
       before.portfolio.stocks.map((s) => s.sym),
@@ -386,12 +387,14 @@ describe('reset everything', () => {
     const id = state.portfolio.stocks[0].id;
     state = setStockField(state, id, 'bandMax', 77);
 
-    const carried = clearAll(state).carried!;
+    const carried = closeAccount(state).carried!;
     expect(carried.model.rows[0].bandMax).toBe(77);
   });
 
   it('has nothing to carry from a workspace that was already empty', () => {
-    expect(clearAll(clearAll(sampleState())).carried).toBeUndefined();
+    expect(closeAccount(closeAccount(sampleState())).carried).toBeUndefined();
+    // And a deliberate start-over keeps nothing at all.
+    expect(clearAll().carried).toBeUndefined();
   });
 });
 

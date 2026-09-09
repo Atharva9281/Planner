@@ -1,9 +1,7 @@
 import { useRef, useState } from 'react';
-import { parseSheets } from '@/lib/import/parse';
-import { readWorkbook } from '@/lib/import/workbook';
 import { carriedAsImport } from '@/lib/import/carry';
+import { Kind, SlotRead, readSlot } from '@/lib/import/slot';
 import { CarriedModel, ParsedImport } from '@/lib/import/types';
-import { money } from '@/lib/format';
 
 /**
  * Two files, two slots.
@@ -13,15 +11,14 @@ import { money } from '@/lib/format';
  * dropzone left the advisor guessing which file had actually been understood, and put the two
  * possible failures behind one message.
  *
- * The model slot can arrive already filled. Closing an account keeps its model, because one model
- * routinely covers several accounts, and the slot then shows what was kept with Replace and
- * Remove beside it — the same two controls a file gets. Reusing the filled state rather than
- * adding a second screen is what keeps this one decision: which files does this account need.
+ * This is the start-over screen. The ordinary path from one account to the next no longer comes
+ * through here at all: "Load different files" asks for the holdings export in its own dialog,
+ * with the model already in hand. What reaches this screen is someone starting again from
+ * nothing — though a kept model still fills the first slot, since it costs nothing to offer and
+ * Remove is one click.
  */
 
-interface Slot {
-  /** Absent on a model carried from the account just closed: there is no file behind it. */
-  file?: File;
+interface Slot extends Partial<SlotRead> {
   parsed: ParsedImport;
   summary: string;
   /** The account the model was carried from, when it did not come from a file. */
@@ -37,53 +34,6 @@ const fromCarried = (carried: CarriedModel): Slot => ({
   }`,
   carriedFrom: carried.from,
 });
-
-export type Kind = 'model' | 'holdings';
-
-/** Reads one file and checks it is the kind this slot expects. */
-async function readSlot(file: File, kind: Kind): Promise<Slot> {
-  const parsed = parseSheets(await readWorkbook(file));
-
-  if (kind === 'model') {
-    const model = parsed.models[0];
-    if (!model) {
-      throw new Error(
-        parsed.holdings
-          ? 'This looks like a holdings export. Try it in the holdings slot instead.'
-          : 'No model found. A model export needs a Symbol column and an Allocation % column.',
-      );
-    }
-    const band = model.cashBand;
-    return {
-      file,
-      parsed,
-      summary: `${model.rows.length} positions${
-        band ? ` · cash band ${band.floor}–${band.ceiling}%` : ' · no cash row'
-      }`,
-    };
-  }
-
-  const holdings = parsed.holdings;
-  if (!holdings) {
-    throw new Error(
-      parsed.models.length > 0
-        ? 'This looks like a model export. Try it in the model slot instead.'
-        : 'No holdings found. A holdings export needs a Symbol column and a Quantity column.',
-    );
-  }
-  /* An account that has been funded but not yet invested reads as zero positions, which on its
-     own looks like a file that failed. Say what it does carry instead. */
-  const what =
-    holdings.positions.length === 0 && holdings.cashFound
-      ? `cash only · ${money(holdings.cash)}`
-      : `${holdings.positions.length} positions`;
-
-  return {
-    file,
-    parsed,
-    summary: `${what}${holdings.accountName ? ` · ${holdings.accountName}` : ''}`,
-  };
-}
 
 function SlotCard({
   kind,

@@ -4,6 +4,7 @@ import { applyImport, importIssues } from './apply';
 import { carriedAsImport, carryModel } from './carry';
 import { ParsedImport, Resolution, SheetGrid } from './types';
 import { lotAwareTarget, mandatoryStatus, needsDecision, planToTarget, totalValue } from '../engine';
+import { ExplorerState } from '../types';
 
 /* ------------------------------------------------------------------ */
 /* fixtures, transcribed from the real exports                         */
@@ -599,6 +600,21 @@ describe('one model, several accounts', () => {
        name, and "carried over from <the model>" says nothing about which account it was. */
     const noName = applyImport(parseSheets([modelSheet()]), baseResolution());
     expect(carryModel(noName)!.from).toBe('the account just closed');
+  });
+
+  it('never lets a carried model name itself into the account label', () => {
+    /* `applyImport` falls back to the model name for the header when the holdings file names no
+       account. A carried model with no real name of its own used to supply the placeholder
+       "Model carried over", which then appeared in the header where the account belongs. */
+    const byHand: ExplorerState = {
+      ...applyImport(parseSheets([modelSheet()]), baseResolution()),
+      source: { kind: 'manual', label: 'typed in by hand' },
+    };
+    const carried = carryModel(byHand)!;
+    expect(carried.model.name).toBe('');
+
+    const next = applyImport(carriedAsImport(carried), baseResolution());
+    expect(next.source?.label).toBe('Imported portfolio');
   });
 
   it('is not offered when a hand-entered price would be the only thing carried', () => {

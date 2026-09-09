@@ -15,6 +15,7 @@ import ModelModal from '@/components/ModelModal';
 import OffModelPanel from '@/components/OffModelPanel';
 import Orders from '@/components/Orders';
 import ImportDialog from '@/components/import/ImportDialog';
+import LoadNextAccount from '@/components/import/LoadNextAccount';
 import { TradeAllButtons, TradeAllResult } from '@/components/TradeAll';
 import {
   addOffModel,
@@ -38,6 +39,7 @@ import {
   undoLast,
   undoSize,
 } from '@/lib/actions';
+import { carryModel } from '@/lib/import/carry';
 import { CarriedModel, ParsedImport } from '@/lib/import/types';
 import { netOrders } from '@/lib/orders';
 import { priceAge } from '@/lib/format';
@@ -74,7 +76,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
   /** Set alongside it when the model in that parse was carried over rather than uploaded. */
   const [pendingCarried, setPendingCarried] = useState<CarriedModel | null>(null);
   /** A pending discard, held until the advisor confirms it. Null when nothing is being asked. */
-  const [confirming, setConfirming] = useState<null | 'clear'>(null);
+  const [confirming, setConfirming] = useState<null | 'clear' | 'next'>(null);
   /** What the last press of a universal button did. Cleared by an undo, a reset, or a new press. */
   const [bulk, setBulk] = useState<BulkOutcome | null>(null);
   /** The same, for the off-model list's "Sell all". */
@@ -285,10 +287,15 @@ export default function Explorer({ slot }: { slot: Slot }) {
             <button className="btn-outline" onClick={() => setOpenModal('model')}>
               Edit model &amp; cash band
             </button>
-            {/* Not a way back — Back does that. This throws the account away so different files
-                can be loaded, which no navigation does. */}
+            {/* Not a way back — Back does that. This moves to the next account, which no
+                navigation does. It asks for that account's holdings export directly whenever
+                there is a model to keep; with nothing to keep there is nothing to ask for, so it
+                falls back to the plain discard. */}
             {slot === 'portfolio' && (
-              <button className="btn-outline" onClick={() => setConfirming('clear')}>
+              <button
+                className="btn-outline"
+                onClick={() => setConfirming(portfolio.stocks.length > 0 ? 'next' : 'clear')}
+              >
                 Load different files
               </button>
             )}
@@ -477,7 +484,29 @@ export default function Explorer({ slot }: { slot: Slot }) {
         />
       )}
 
-      {/* Both routes to an empty workspace land here first. */}
+      {/* The ordinary move: same model, next account, and the file it needs asked for here. */}
+      {confirming === 'next' && (
+        <LoadNextAccount
+          carried={carryModel(state)!}
+          atRisk={atRisk}
+          onCancel={() => setConfirming(null)}
+          onReady={(parsed, carried) => {
+            setConfirming(null);
+            setPendingImport(parsed);
+            setPendingCarried(carried);
+            setOpenModal('import');
+          }}
+          onStartOver={() => {
+            setConfirming(null);
+            setBulk(null);
+            setSale(null);
+            setState(clearAll);
+          }}
+        />
+      )}
+
+      {/* The full discard: "Clear the whole portfolio", and "Load different files" on a workspace
+          with no model to carry. Both throw everything away. */}
       {confirming === 'clear' && (
         <ConfirmDialog
           title="Discard this portfolio?"
@@ -487,17 +516,9 @@ export default function Explorer({ slot }: { slot: Slot }) {
               <p>
                 This clears {atRisk.join(' and ')}, and returns to the upload screen.
               </p>
-              {/* Said here rather than discovered on the next screen: it changes what the advisor
-                  has to go and find before pressing this. */}
-              {portfolio.stocks.length > 0 && (
-                <p className="mt-3">
-                  The model is kept, ready for the next account. You will only need that account’s
-                  holdings export.
-                </p>
-              )}
               <p className="mt-3 text-ink-soft">
-                The holdings export cannot be read back automatically, so anything decided here
-                would have to be worked through again. Download the trade log first if you need it.
+                The two exports cannot be read back automatically, so anything decided here would
+                have to be worked through again. Download the trade log first if you need it.
               </p>
             </>
           }

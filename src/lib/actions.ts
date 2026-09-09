@@ -401,15 +401,23 @@ export function loadSample(): ExplorerState {
 }
 
 /**
- * Throws the whole portfolio away and returns to the empty first screen — but sets the model
- * aside on the way out, because the same model routinely covers several accounts.
+ * Closes the account and keeps its model for the next one.
  *
- * Only the model survives: every share count, price, trade and cash balance belonged to the
- * account being closed and goes with it. The upload screen shows what was kept and offers to
- * remove it, so this is a head start rather than a decision made on the advisor's behalf.
+ * Every share count, price, trade and cash balance belonged to the account being closed and goes
+ * with it. Only the mandate survives, because the same mandate routinely covers several accounts.
  */
-export function clearAll(state: ExplorerState): ExplorerState {
+export function closeAccount(state: ExplorerState): ExplorerState {
   return { ...emptyState(), carried: carryModel(state) };
+}
+
+/**
+ * Throws everything away, the model included, and returns to the empty first screen.
+ *
+ * The deliberate start-over: what "Start over with both files" and "Clear the whole portfolio"
+ * do. Distinct from `closeAccount`, which is the ordinary move from one account to the next.
+ */
+export function clearAll(): ExplorerState {
+  return emptyState();
 }
 
 /* ------------------------------------------------------------------ */
