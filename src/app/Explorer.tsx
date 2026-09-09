@@ -14,6 +14,7 @@ import LotAwareTable from '@/components/LotAwareTable';
 import ModelModal from '@/components/ModelModal';
 import OffModelPanel from '@/components/OffModelPanel';
 import Orders from '@/components/Orders';
+import { POSITIONS_TITLE } from '@/components/PositionsHead';
 import ImportDialog from '@/components/import/ImportDialog';
 import LoadNextAccount from '@/components/import/LoadNextAccount';
 import { TradeAllButtons, TradeAllResult } from '@/components/TradeAll';
@@ -342,7 +343,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
 
           <div className="mb-4">
             <Panel
-              title="Every position, as share counts it could hold"
+              title={POSITIONS_TITLE}
               summary={
                 pending === 0
                   ? `${portfolio.stocks.length} positions · all at target`

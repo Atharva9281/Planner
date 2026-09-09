@@ -3,6 +3,25 @@ import { cashPct, cashStatus, totalValue } from '@/lib/engine';
 import { money, pct } from '@/lib/format';
 import { Portfolio } from '@/lib/types';
 
+/*
+ * The shape of the tile row, exported because the empty workspace draws the same five boxes behind
+ * the upload card and the two must not drift: the promise there is that nothing moves when the
+ * files land. Only the figures and the labels differ, which is the one difference that is real.
+ *
+ * Six tracks wide, three narrow, with cash taking two of them either way. A grid rather than a
+ * wrapping flex row because flex wrapped the floor tile onto a line of its own and then stretched
+ * it across the full width; here the two shapes are 1 + 2 + 1 + 1 + 1 on one row, or 1 + 2 over
+ * 1 + 1 + 1 on two. Neither leaves a tile stranded.
+ *
+ * The tiles own the whole row at every width. They used to share it with the two Edit buttons,
+ * which cost about 360px and squeezed the total-account tile below the width of its own figure —
+ * that is what was clipping "$562,871.50" at 1366. Those buttons now sit in the page header with
+ * Undo and Reset, which is where the compact bar has always kept them.
+ */
+export const TILE_GRID = 'grid grid-cols-3 gap-3 wide:grid-cols-6';
+export const TILE = 'rounded-xl border border-line bg-panel px-5 py-4';
+export const TILE_LABEL = 'mt-1.5 text-[11.5px] font-semibold uppercase tracking-[0.04em]';
+
 /**
  * The figures every decision is measured against, with cash drawn against its own band in the
  * same visual language as the holdings below it. The tile turns amber against the band that is
@@ -15,23 +34,12 @@ export default function CashStatus({ portfolio }: { portfolio: Portfolio }) {
   const status = cashStatus(portfolio);
   const short = portfolio.cash < 0;
 
-  const tile = 'rounded-xl border border-line bg-panel px-5 py-4';
-  const label = 'mt-1.5 text-[11.5px] font-semibold uppercase tracking-[0.04em] text-ink-soft';
+  const tile = TILE;
+  const label = `${TILE_LABEL} text-ink-soft`;
   const figure = 'font-mono text-[22px] font-semibold leading-none tabular-nums';
 
   return (
-    /*
-     * Six tracks wide, three narrow, with cash taking two of them either way. A grid rather than a
-     * wrapping flex row because flex wrapped the floor tile onto a line of its own and then
-     * stretched it across the full width; here the two shapes are 1 + 2 + 1 + 1 + 1 on one row,
-     * or 1 + 2 over 1 + 1 + 1 on two. Neither leaves a tile stranded.
-     *
-     * The tiles own the whole row at every width. They used to share it with the two Edit buttons,
-     * which cost about 360px and squeezed the total-account tile below the width of its own
-     * figure — that is what was clipping "$562,871.50" at 1366. Those buttons now sit in the page
-     * header with Undo and Reset, which is where the compact bar has always kept them.
-     */
-    <div className="grid grid-cols-3 gap-3 wide:grid-cols-6">
+    <div className={TILE_GRID}>
       <div className={tile}>
         <div className={`${figure} text-ink`}>{money(total)}</div>
         <div className={label}>Total account</div>

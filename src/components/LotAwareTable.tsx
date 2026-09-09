@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import RowToggle from './RowToggle';
 import { NumInput } from './Inputs';
+import { FOLD, POSITION_COLUMNS, PositionsHead } from './PositionsHead';
 import WhatIfCell from './WhatIfCell';
 import {
   affordableShares,
@@ -19,17 +20,6 @@ import {
 import { money, pct, shares as fmtShares } from '@/lib/format';
 import { LotEdge, Portfolio, Stock } from '@/lib/types';
 import { RowCollapse } from '@/lib/useRowCollapse';
-
-/**
- * The three columns that fold when the window cannot hold ten.
- *
- * Every column here is a share count the position could hold, so they pair off: a band edge and
- * the nearest lot inside it, twice over. When space runs out it is the raw edges that go, because
- * the lot beside each one is the answer this tool exists to give — and they come back as a strip
- * under the row rather than being lost. What the cash affords folds with them, being the one
- * figure that describes the account rather than the position.
- */
-const FOLD = 'hidden wide:table-cell';
 
 interface Props {
   portfolio: Portfolio;
@@ -440,23 +430,7 @@ export default function LotAwareTable({
   return (
     <div className="table-stick">
       <table className="w-full border-collapse">
-        <thead>
-          <tr>
-            <th className="th th-lead rounded-tl-lg">Ticker</th>
-            <th className="th th-lead">Current holdings</th>
-            <th className="th">Target holdings</th>
-            <th className="th th-lead">Lot closest to target</th>
-            <th className={`th ${FOLD}`}>Lower band</th>
-            <th className="th">Lot closest to lower band</th>
-            <th className={`th ${FOLD}`}>Upper band</th>
-            <th className="th">Lot closest to upper band</th>
-            {/* "Shares with current cash" wrapped to four lines, and since every header shares
-                one row that single label set the height of the whole bar. The sub-line under the
-                figure spells the arithmetic out anyway. */}
-            <th className={`th ${FOLD}`}>Cash buys</th>
-            <th className="th th-lead rounded-tr-lg">Buy or sell</th>
-          </tr>
-        </thead>
+        <PositionsHead />
         <tbody>
           {portfolio.stocks.map((s, i) => {
             const stripe = i % 2 ? 'bg-panel-alt' : 'bg-panel';
@@ -482,7 +456,8 @@ export default function LotAwareTable({
                       {s.target}% &middot; {s.bandMin}&ndash;{s.bandMax}%
                     </span>
                   </td>
-                  <td className="td" colSpan={9}>
+                  {/* Everything but the ticker beside it. */}
+                  <td className="td" colSpan={POSITION_COLUMNS.length - 1}>
                     <div className="flex flex-wrap items-center gap-3">
                       {/* Two different faults wear the same red, and saying the wrong one is
                           worse than saying neither. A row holding shares with no price is
@@ -814,7 +789,7 @@ export default function LotAwareTable({
                 <tr className={`${stripe} ${breach} wide:hidden`}>
                   {/* Not `.td`: the strip carries its own padding, and the border here is the one
                       the row above gave up so the pair reads as a single record. */}
-                  <td className="border-b border-line-soft" colSpan={10}>
+                  <td className="border-b border-line-soft" colSpan={POSITION_COLUMNS.length}>
                     <BandStrip
                       stock={s}
                       minShares={r.minShares}

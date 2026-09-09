@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { TILE, TILE_GRID, TILE_LABEL } from './CashStatus';
+import { FOLD, POSITION_COLUMNS, POSITIONS_TITLE, PositionsHead } from './PositionsHead';
 import UploadSlots from './import/UploadSlots';
 import { CarriedModel, ParsedImport } from '@/lib/import/types';
 
@@ -16,25 +18,14 @@ import { CarriedModel, ParsedImport } from '@/lib/import/types';
 const GHOST_ROWS = 7;
 
 /*
- * The real table's ten columns, in its order, with the three that fold below `wide` marked so the
- * ghost folds with them. This list, the title above it and the tiles below all have to track
- * LotAwareTable, Explorer and CashStatus exactly: the whole point of the skeleton is that nothing
- * moves when the files land, and a ghost carrying the wrong columns or an older heading breaks it
- * at the one moment anybody is watching. It has drifted twice already.
+ * The columns, the header row, the heading above it and the tile shape below all come from the
+ * modules that draw the real thing. Nothing here is a second copy: this ghost had drifted twice
+ * from hand-kept lists, and the last time it was missing the brighter header ink on four columns
+ * and one rounded corner — so the header bar changed at the one moment anybody is watching it.
+ *
+ * The tile labels are the one thing written out here, because the real ones carry percentages
+ * that do not exist until a model is loaded.
  */
-const COLUMNS: { label: string; raw?: true }[] = [
-  { label: 'Ticker' },
-  { label: 'Current holdings' },
-  { label: 'Target holdings' },
-  { label: 'Lot closest to target' },
-  { label: 'Lower band', raw: true },
-  { label: 'Lot closest to lower band' },
-  { label: 'Upper band', raw: true },
-  { label: 'Lot closest to upper band' },
-  { label: 'Cash buys', raw: true },
-  { label: 'Buy or sell' },
-];
-
 const TILES = ['Total account', 'Cash', 'Target', 'Ceiling', 'Floor'];
 
 /** A dimmed bar standing in for a value that has not arrived yet. */
@@ -54,19 +45,12 @@ export default function SkeletonWorkspace({
 }) {
   return (
     <>
-      {/* ---- the tiles, empty. Same grid as CashStatus, cash spanning two tracks ---- */}
-      <div className="mb-4 grid grid-cols-3 gap-3 wide:grid-cols-6" aria-hidden>
+      {/* ---- the tiles, empty. CashStatus's own grid, cash spanning two tracks ---- */}
+      <div className={`mb-5 ${TILE_GRID}`} aria-hidden>
         {TILES.map((label) => (
-          <div
-            key={label}
-            className={`rounded-xl border border-line bg-panel px-5 py-4 ${
-              label === 'Cash' ? 'col-span-2' : ''
-            }`}
-          >
+          <div key={label} className={`${TILE} ${label === 'Cash' ? 'col-span-2' : ''}`}>
             <div className="font-mono text-[22px] font-semibold leading-none text-line">—</div>
-            <div className="mt-1.5 text-[11.5px] font-semibold uppercase tracking-[0.04em] text-ink-faint">
-              {label}
-            </div>
+            <div className={`${TILE_LABEL} text-ink-faint`}>{label}</div>
           </div>
         ))}
       </div>
@@ -74,34 +58,18 @@ export default function SkeletonWorkspace({
       {/* ---- the table, drawn but empty, with the upload panel inside it ---- */}
       <section className="panel overflow-hidden">
         <div className="px-4 pt-4 pb-3">
-          <h2 className="panel-title">Every position, as share counts it could hold</h2>
+          <h2 className="panel-title">{POSITIONS_TITLE}</h2>
         </div>
 
         <div className="relative">
           <div className="absolute inset-0 overflow-hidden" aria-hidden>
             <table className="w-full border-collapse">
-              <thead>
-                <tr>
-                  {COLUMNS.map((c, i) => (
-                    <th
-                      key={c.label}
-                      className={`th ${i === 0 ? 'th-lead' : ''} ${
-                        i === COLUMNS.length - 1 ? 'rounded-tr-lg' : ''
-                      } ${c.raw ? 'hidden wide:table-cell' : ''}`}
-                    >
-                      {c.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
+              <PositionsHead />
               <tbody className="opacity-40">
                 {Array.from({ length: GHOST_ROWS }).map((_, r) => (
                   <tr key={r} className={r % 2 ? 'bg-panel-alt' : 'bg-panel'}>
-                    {COLUMNS.map((c) => (
-                      <td
-                        key={c.label}
-                        className={`td ${c.raw ? 'hidden wide:table-cell' : ''}`}
-                      >
+                    {POSITION_COLUMNS.map((c) => (
+                      <td key={c.label} className={`td ${c.raw ? FOLD : ''}`}>
                         <div className="flex flex-col gap-2">
                           <Bar w="58%" />
                           <Bar w="38%" />
