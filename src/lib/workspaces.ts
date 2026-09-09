@@ -24,7 +24,19 @@ export interface Workspaces {
   portfolio: ExplorerState;
 }
 
-/** Bumped whenever ExplorerState changes shape, so a stale tab cannot restore into a new app. */
+/**
+ * The key the workspaces are saved under.
+ *
+ * Deliberately *not* bumped for every change to `ExplorerState`, whatever an earlier note here
+ * claimed. Bumping abandons whatever is stored, and what is stored is a real account built from
+ * two exports the browser cannot read a second time — so a bump destroys someone's work rather
+ * than protecting it. Every field added since has therefore been optional and read through a
+ * fallback (`baseline.offModel`, `source.modelName`, `carried`), which is what lets a payload
+ * written by an older build restore into this one.
+ *
+ * Bump it only for a change an old payload genuinely cannot survive, and know that the cost is
+ * every account currently open in every browser this has been used from.
+ */
 const STORAGE_KEY = 'cash-deployment-explorer:v1';
 
 /*
@@ -60,14 +72,50 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
+/**
+ * Whether a restored payload is shaped enough to render.
+ *
+ * Deliberately shallow. It checks only what the first render reaches into without a guard of its
+ * own — the two slots, the portfolio in each, and the arrays that are iterated or indexed — and
+ * nothing beyond that. Anything stricter would start discarding accounts over fields the app
+ * already reads defensively, and this is the one place where being wrong throws away work that
+ * cannot be loaded again.
+ *
+ * It exists because the alternative to an empty workspace is not a smaller one: without it a
+ * payload missing any of these throws during render, and an app whose whole promise is that your
+ * work is still here has no way back in at all.
+ */
+export function restorable(value: unknown): value is Workspaces {
+  if (typeof value !== 'object' || value === null) return false;
+  const slots = value as Record<string, ExplorerState | undefined>;
+
+  return (['example', 'portfolio'] as const).every((slot) => {
+    const s = slots[slot];
+    return (
+      typeof s === 'object' &&
+      s !== null &&
+      typeof s.portfolio === 'object' &&
+      s.portfolio !== null &&
+      Array.isArray(s.portfolio.stocks) &&
+      Array.isArray(s.portfolio.offModel) &&
+      Array.isArray(s.log) &&
+      typeof s.baseline === 'object' &&
+      s.baseline !== null &&
+      typeof s.baseline.shares === 'object' &&
+      s.baseline.shares !== null
+    );
+  });
+}
+
 /* Read once when this module first loads in a browser, before anything renders. Doing it here
    rather than in an effect keeps the restore out of React's render cycle entirely. */
 if (typeof window !== 'undefined') {
   try {
     const saved = store().getItem(STORAGE_KEY);
-    snapshot = saved ? (JSON.parse(saved) as Workspaces) : fresh();
+    const parsed: unknown = saved ? JSON.parse(saved) : null;
+    snapshot = restorable(parsed) ? parsed : fresh();
   } catch {
-    // A private window, a cleared store, or something written by an older shape of the app.
+    // A private window, a cleared store, or something that is not JSON at all.
     snapshot = fresh();
   }
 }
