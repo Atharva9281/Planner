@@ -75,7 +75,7 @@ export default function WhatIfCell({
           }}
           aria-label={`Shares of ${stock.sym} to buy, or a negative number to sell`}
         />
-        <button className="btn-ghost" disabled={draft.trim() === ''} onClick={calculate}>
+        <button className="btn-amber" disabled={draft.trim() === ''} onClick={calculate}>
           Calculate
         </button>
       </div>

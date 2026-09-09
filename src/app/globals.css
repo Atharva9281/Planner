@@ -203,6 +203,22 @@
            disabled:hover:border-line disabled:hover:text-ink-soft;
   }
 
+  /*
+   * The two controls that act on a row without trading on it: Reset, and Calculate in the what-if
+   * box. Both were `btn-ghost` — a white button with a hairline border, sitting on a white row —
+   * and both vanished into the table completely.
+   *
+   * Amber because the other colours are all spoken for: accent blue belongs to the page-header
+   * buttons, and buy green and sell red state a direction of trade on every other button in this
+   * table. A soft fill rather than a solid one, so it reads as available rather than as an alarm.
+   * The warn ink on the warn fill measures 4.98:1, just over the 4.9 floor the ramp above sets.
+   */
+  .btn-amber {
+    @apply btn border border-[#e7c48a] bg-warn-soft px-3 py-1.5 text-warn
+           hover:border-warn hover:bg-[#ffe9c2] disabled:opacity-45
+           disabled:hover:border-[#e7c48a] disabled:hover:bg-warn-soft;
+  }
+
   .btn-outline {
     @apply btn border-[1.5px] border-accent bg-panel px-4 py-2.5 text-[13.5px] text-accent
            hover:bg-accent-soft disabled:border-line disabled:text-ink-faint

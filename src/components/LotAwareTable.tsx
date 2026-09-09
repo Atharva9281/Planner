@@ -613,7 +613,7 @@ export default function LotAwareTable({
                           whatever height this cell's text happens to end. */}
                       <div className="cell-action">
                         <button
-                          className="btn-ghost"
+                          className="btn-amber"
                           disabled={!resettable.has(s.id)}
                           onClick={() => onResetStock(s.id)}
                         >
@@ -638,9 +638,13 @@ export default function LotAwareTable({
                       {pct(r.weight)}
                     </span>
                     <span className="sub">{money(s.shares * s.price)}</span>
+                    {/* Just the direction. "MANDATORY, over band" set the width of this column on
+                        every breached row, and the word carried nothing the red badge and the red
+                        weight above it were not already saying. The shut row has always read
+                        "over band" alone, so the two now agree. */}
                     {r.mandatory && (
                       <span className="badge mt-2 bg-sell-soft text-sell">
-                        MANDATORY, {r.mandatory} band
+                        {r.mandatory} band
                       </span>
                     )}
                   </td>
