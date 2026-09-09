@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { cashPct } from '@/lib/engine';
 import { orderSummary } from '@/lib/orders';
 import { money, pct, shares as fmtShares } from '@/lib/format';
 import { ExplorerState, LogEntry, Portfolio } from '@/lib/types';
@@ -21,10 +22,11 @@ export default function Orders({ state }: { state: ExplorerState }) {
   const [showSteps, setShowSteps] = useState(false);
   const { orders, cashBefore, cashAfter, steps } = orderSummary(state);
 
-  /* Where cash sits once every one of these orders has been placed. The same figure on every
-     row, deliberately: these are net orders with no sequence to run in, so a per-row balance
-     would be inventing an order of execution the tool never decided. */
-  const cashPercent = cashPctOf(cashAfter, state.portfolio);
+  /* Where cash sits once every one of these orders has been placed — which is where it sits now,
+     since the table upstairs has already applied them. The same figure on every row, deliberately:
+     these are net orders with no sequence to run in, so a per-row balance would be inventing an
+     order of execution the tool never decided. */
+  const cashPercent = cashPct(state.portfolio);
 
   if (orders.length === 0) {
     return (
@@ -129,15 +131,6 @@ export default function Orders({ state }: { state: ExplorerState }) {
       {showSteps && <Steps log={state.log} portfolio={state.portfolio} />}
     </>
   );
-}
-
-/** Cash as a percent of the account it sits in, without recomputing the whole engine for a caption. */
-function cashPctOf(cash: number, p: Portfolio): number {
-  const total =
-    p.cash +
-    p.stocks.reduce((v, s) => v + s.shares * s.price, 0) +
-    p.offModel.reduce((v, h) => v + h.shares * h.price, 0);
-  return total > 0 ? (cash / total) * 100 : 0;
 }
 
 /**
