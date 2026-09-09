@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { likelyFunds, num, offModelSymbols, parseSheets, unpricedSymbols } from './parse';
 import { applyImport, importIssues } from './apply';
 import { carriedAsImport, carryModel } from './carry';
+import { sellAllOffModel } from '../actions';
 import { ParsedImport, Resolution, SheetGrid } from './types';
 import { lotAwareTarget, mandatoryStatus, needsDecision, planToTarget, totalValue } from '../engine';
 import { ExplorerState } from '../types';
@@ -345,13 +346,18 @@ describe('applying the import', () => {
     expect(p.offModel.some((h) => h.sym === 'OPTIONS')).toBe(false);
   });
 
-  it('marks fixed income untradeable on both sides of the model', () => {
+  it('holds fixed income inside the model, and sells it outside', () => {
     const p = applyImport(parsed(), baseResolution()).portfolio;
 
     expect(p.stocks.find((s) => s.sym === 'MGSMX')!.tradeable).toBe(false);
     expect(p.stocks.find((s) => s.sym === 'AAPL')!.tradeable).toBe(true);
     // FLUD is Fixed Income Sleeve in the holdings but has no model row.
-    expect(p.offModel.find((h) => h.sym === 'FLUD')!.tradeable).toBe(false);
+    /* FLUD is a bond fund the model has no row for. Outside the model there is no target and no
+       band to respect, so it is sold like anything else the model never asked for. */
+    expect(p.offModel.find((h) => h.sym === 'FLUD')).toBeDefined();
+    expect(sellAllOffModel({ ...applyImport(parsed(), baseResolution()) }).outcome.sold).toBe(
+      p.offModel.length,
+    );
   });
 
   it('turns the lot rule off for a fund, so it aims at the raw share count', () => {

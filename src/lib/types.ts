@@ -32,15 +32,21 @@ export interface Stock {
   lotRounding?: boolean;
 }
 
-/** Something held in the account but outside the model. Counts toward total account value,
- *  and therefore toward every band dollar figure, until it is sold. */
+/**
+ * Something held in the account but outside the model. Counts toward total account value, and
+ * therefore toward every band dollar figure, until it is sold.
+ *
+ * Every one of these can be sold, whatever asset class it is. Fixed income inside the model is
+ * held rather than traded — the model gives it a target and a band, so it is part of the mandate.
+ * Outside the model there is no mandate to respect: the model has no row for it, which is the
+ * whole reason it goes. A bond fund the model never asked for is no different from a stock the
+ * model never asked for.
+ */
 export interface OffModelHolding {
   id: string;
   sym: string;
   shares: number;
   price: number;
-  /** False for fixed income and anything else the tool does not trade: counted, never sold here. */
-  tradeable?: boolean;
 }
 
 export interface Portfolio {

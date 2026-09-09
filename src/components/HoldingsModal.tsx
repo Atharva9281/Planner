@@ -168,9 +168,7 @@ export default function HoldingsModal({
                   {/* One way out per row, and neither can move the account total on its own:
                       a holding worth something is sold, a row worth nothing is removed. */}
                   <td className={`${TD} whitespace-nowrap text-right`}>
-                    {h.tradeable === false ? (
-                      <span className="badge bg-accent-soft text-accent">held, not traded</span>
-                    ) : offModelValue(h) === 0 ? (
+                    {offModelValue(h) === 0 ? (
                       <button
                         className="btn-ghost"
                         title="Nothing is held here, so removing this row changes no other number"

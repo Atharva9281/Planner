@@ -13,7 +13,11 @@ import { ParsedImport, ParsedModel, Resolution } from './types';
  *
  * The same applies to cash. The Cash and Equiv row supplies it whenever the file has one; an
  * account being opened has no such file, so the balance the advisor entered is used instead.
- * Options never made it past the parser and the asset class decides what may be traded.
+ * Options never made it past the parser.
+ *
+ * The asset class decides what may be traded *inside* the model, where a target and a band say
+ * what to hold and fixed income is held rather than traded. It decides nothing outside it: a
+ * holding the model has no row for can always be sold, whatever it is made of.
  */
 export function applyImport(parsed: ParsedImport, resolution: Resolution): ExplorerState {
   const model = pickModel(parsed, resolution.modelName);
@@ -55,7 +59,6 @@ export function applyImport(parsed: ParsedImport, resolution: Resolution): Explo
         sym: p.sym,
         shares: p.shares,
         price: p.price,
-        tradeable: p.tradeable,
       }))
     : [];
 

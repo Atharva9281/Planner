@@ -82,6 +82,10 @@ export function applyTrade(
 /**
  * Sells an off-model holding in full. The whole holding is kept on the log entry so undo can put
  * it back exactly as it was, rather than reconstructing its price by dividing proceeds by shares.
+ *
+ * No asset class is exempt. Fixed income is held rather than traded *inside* the model, where it
+ * has a target and a band; a holding the model has no row for has no such standing, whatever it
+ * happens to be made of.
  */
 export function sellOffModel(
   state: ExplorerState,
@@ -90,8 +94,7 @@ export function sellOffModel(
   batch?: string,
 ): ExplorerState {
   const holding = state.portfolio.offModel.find((h) => h.id === id);
-  // Fixed income is held and counted here, never traded, on either side of the model.
-  if (!holding || holding.tradeable === false) return state;
+  if (!holding) return state;
 
   const before = state.portfolio;
   const cashBefore = before.cash;
@@ -135,8 +138,6 @@ export interface OffModelSale {
   sold: number;
   /** What they raised, added to cash. */
   proceeds: number;
-  /** Fixed income and anything else held but never traded, which stays where it is. */
-  heldNotTraded: number;
   batch: string;
 }
 
@@ -149,8 +150,9 @@ export interface OffModelSale {
  * making him do it one row at a time in a dialog buried under "Edit starting holdings" is what
  * kept the normal answer out of sight.
  *
- * Fixed income is passed over rather than sold. It is held and counted on either side of the
- * model, and this button does not become the one place that rule stops applying.
+ * Every asset class goes, fixed income included. Being held rather than traded is a rule about
+ * positions the model asks for, where a target and a band say what to hold; a holding the model
+ * has no row for is not one of those.
  *
  * Nothing here decides *whether* to sell. The press is the decision, and Undo takes the whole
  * press back at once.
@@ -167,7 +169,8 @@ export function sellAllOffModel(
   /* Read once off the list as it stands: `sellOffModel` removes the row it sells, so iterating
      the live array would skip every other holding. */
   for (const h of state.portfolio.offModel) {
-    if (h.tradeable === false || offModelValue(h) === 0) continue;
+    // A row worth nothing has nothing to sell; it leaves through "Remove row" instead.
+    if (offModelValue(h) === 0) continue;
     const after = sellOffModel(next, h.id, batch);
     if (after === next) continue;
     next = after;
@@ -179,7 +182,6 @@ export function sellAllOffModel(
     outcome: {
       sold,
       proceeds: next.portfolio.cash - before,
-      heldNotTraded: state.portfolio.offModel.filter((h) => h.tradeable === false).length,
       batch,
     },
   };

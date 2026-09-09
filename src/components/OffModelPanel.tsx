@@ -18,8 +18,9 @@ import { Portfolio } from '@/lib/types';
  * and that value counts toward the account total every band is a percentage of — which is why
  * the share of the account is stated here rather than left to be worked out.
  *
- * Fixed income is listed and counted but carries no button. It is held rather than traded on
- * either side of the model, and this panel is not where that stops being true.
+ * Every asset class here can be sold, fixed income included. Being held rather than traded is a
+ * rule about positions the model asks for, where a target and a band say what to hold. A holding
+ * the model has no row for has no such standing, whatever it is made of.
  */
 export default function OffModelPanel({
   portfolio,
@@ -42,8 +43,7 @@ export default function OffModelPanel({
 
   const total = holdings.reduce((n, h) => n + offModelValue(h), 0);
   const account = totalValue(portfolio);
-  const sellable = holdings.filter((h) => h.tradeable !== false && offModelValue(h) > 0);
-  const held = holdings.length - sellable.length;
+  const sellable = holdings.filter((h) => offModelValue(h) > 0);
 
   return (
     <div className="mb-4">
@@ -54,7 +54,7 @@ export default function OffModelPanel({
           sellable.length > 0 ? (
             <button
               className="btn-sell px-4 py-2 text-[13.5px]"
-              title="Sells every one of these at its listed price and adds the proceeds to cash. Fixed income is left alone."
+              title="Sells every one of these at its listed price and adds the proceeds to cash."
               onClick={onSellAll}
             >
               Sell all {sellable.length}
@@ -72,12 +72,6 @@ export default function OffModelPanel({
               <span className="font-semibold">
                 {sale.sold} sold, {money(sale.proceeds)} added to cash
               </span>
-              {sale.heldNotTraded > 0 && (
-                <span className="text-ink-soft">
-                  {' '}
-                  · {sale.heldNotTraded} left alone, held rather than traded
-                </span>
-              )}
             </div>
             {undoable && (
               <button className="btn-ghost shrink-0" onClick={onUndo}>
@@ -114,9 +108,7 @@ export default function OffModelPanel({
                     <td className="td">{money(h.price)}</td>
                     <td className="td tabular-nums">{money(value)}</td>
                     <td className="td">
-                      {h.tradeable === false ? (
-                        <span className="badge bg-accent-soft text-accent">held, not traded</span>
-                      ) : value === 0 ? (
+                      {value === 0 ? (
                         <span className="text-[13px] text-ink-soft">nothing held</span>
                       ) : (
                         <button className="btn-sell" onClick={() => onSell(h.id)}>
@@ -131,12 +123,6 @@ export default function OffModelPanel({
           </table>
         </div>
 
-        {held > 0 && (
-          <p className="px-4 pt-3 pb-4 text-[13px] leading-relaxed text-ink-soft">
-            {held === 1 ? 'One holding is' : `${held} holdings are`} held rather than traded —
-            fixed income is counted on either side of the model and never sold here.
-          </p>
-        )}
       </Panel>
     </div>
   );

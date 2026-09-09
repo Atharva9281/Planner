@@ -155,9 +155,9 @@ describe('off-model holdings', () => {
     expect(after.portfolio.cash).toBeCloseTo(38000, 6);
   });
 
-  it('sells every one it can in a single press, and leaves fixed income alone', () => {
-    /* The model is the mandate, so a holding it has no row for is normally sold. Fixed income is
-       the exception on both sides of the model: counted, never traded. */
+  it('sells every one of them in a single press, fixed income included', () => {
+    /* The model is the mandate, so a holding it has no row for is sold — whatever asset class it
+       is. Being held rather than traded is a rule about positions the model asks for. */
     let state = withOther(100, 50);
     state = addOffModel(state);
     const second = state.portfolio.offModel[1].id;
@@ -166,22 +166,13 @@ describe('off-model holdings', () => {
     state = addOffModel(state);
     const bond = state.portfolio.offModel[2].id;
     state = setOffModelField(setOffModelField(state, bond, 'shares', 40), bond, 'price', 25);
-    state = {
-      ...state,
-      portfolio: {
-        ...state.portfolio,
-        offModel: state.portfolio.offModel.map((h) =>
-          h.id === bond ? { ...h, tradeable: false } : h,
-        ),
-      },
-    };
 
     const before = totalValue(state.portfolio);
     const { state: after, outcome } = sellAllOffModel(state);
 
-    expect(outcome).toMatchObject({ sold: 2, proceeds: 6000, heldNotTraded: 1 });
-    expect(after.portfolio.offModel.map((h) => h.id)).toEqual([bond]);
-    expect(after.portfolio.cash).toBeCloseTo(38000 + 6000, 6);
+    expect(outcome).toMatchObject({ sold: 3, proceeds: 7000 });
+    expect(after.portfolio.offModel).toHaveLength(0);
+    expect(after.portfolio.cash).toBeCloseTo(38000 + 7000, 6);
     // A sale swaps holdings for dollars, so the account total does not move.
     expect(totalValue(after.portfolio)).toBeCloseTo(before, 6);
   });
@@ -202,17 +193,11 @@ describe('off-model holdings', () => {
     expect(back.portfolio.cash).toBeCloseTo(38000, 6);
   });
 
-  it('reports nothing sold when every holding is held-only', () => {
-    let state = withOther(100, 50);
-    state = {
-      ...state,
-      portfolio: {
-        ...state.portfolio,
-        offModel: state.portfolio.offModel.map((h) => ({ ...h, tradeable: false })),
-      },
-    };
+  it('reports nothing sold when every row is worth nothing', () => {
+    // A blank row added by mistake has nothing to sell; it leaves through "Remove row" instead.
+    const state = withOther(0, 0);
     const { state: after, outcome } = sellAllOffModel(state);
-    expect(outcome).toMatchObject({ sold: 0, proceeds: 0, heldNotTraded: 1 });
+    expect(outcome).toMatchObject({ sold: 0, proceeds: 0 });
     expect(after).toBe(state);
   });
 
