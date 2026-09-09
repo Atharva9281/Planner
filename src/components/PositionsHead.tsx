@@ -41,17 +41,30 @@ export interface PositionColumn {
    * settles the column at its own content and gives the remainder to the columns left auto.
    */
   tight?: true;
+  /**
+   * Held to a floor wide enough for its move line on one line.
+   *
+   * The two band-edge columns carry the same "SELL 1,645 sh" over "$15,925.00" that every other
+   * destination column does, but their headers are the shortest on the row — and a table hands out
+   * spare width in proportion to a column's longest content, headers included. So they were
+   * settling around 120px and breaking "SELL 325 sh" across two lines while the columns beside
+   * them, with far longer headings, sat 70px wider on identical figures.
+   */
+  roomy?: true;
 }
 
 export const POSITION_COLUMNS: PositionColumn[] = [
   { label: 'Ticker', lead: true },
   { label: 'Current holdings', lead: true, tight: true },
   { label: 'Target holdings' },
-  { label: 'Lot closest to target', lead: true },
-  { label: 'Lower band', raw: true },
-  { label: 'Lot closest to lower band' },
-  { label: 'Upper band', raw: true },
-  { label: 'Lot closest to upper band' },
+  /* "Lot closest to target" — the "closest" is dropped. The column sits beside the band edge it
+     belongs to, so which lot is meant is never in question, and the word was long enough to earn
+     the column width it did not need. */
+  { label: 'Lot to target', lead: true },
+  { label: 'Lower band', raw: true, roomy: true },
+  { label: 'Lot to lower band' },
+  { label: 'Upper band', raw: true, roomy: true },
+  { label: 'Lot to upper band' },
   /* "Shares with current cash" wrapped to four lines, and since every header shares one row that
      single label set the height of the whole bar. The sub-line under the figure spells the
      arithmetic out anyway. */
@@ -66,6 +79,7 @@ function headClass(column: PositionColumn, index: number): string {
     column.lead && 'th-lead',
     column.raw && FOLD,
     column.tight && 'w-[1%]',
+    column.roomy && 'min-w-[8.5rem]',
     index === 0 && 'rounded-tl-lg',
     index === POSITION_COLUMNS.length - 1 && 'rounded-tr-lg',
   ]
