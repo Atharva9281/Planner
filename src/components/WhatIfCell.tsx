@@ -104,8 +104,14 @@ export default function WhatIfCell({
                 >
                   {result.action === 'BUY' ? 'Buy' : 'Sell'} {fmtShares(result.shares)} sh
                 </span>
-                <span className="sub">
-                  {result.action === 'BUY' ? '−' : '+'}
+                {/* No sign in front of it. The line above already says Buy or Sell, and the
+                    colour says it a second time — a third statement in a minus sign only made the
+                    figure harder to read. */}
+                <span
+                  className={`sub font-semibold ${
+                    result.action === 'BUY' ? 'text-buy' : 'text-sell'
+                  }`}
+                >
                   {money(result.amount)}
                 </span>
               </div>
@@ -117,30 +123,29 @@ export default function WhatIfCell({
               )}
               {/* A sell asked for more than the position holds, so it was cut to the holding. */}
               {result.action === 'SELL' && asked !== null && result.shares < Math.abs(asked) && (
-                <p className="sub text-warn">
-                  Only {fmtShares(result.shares)} sh are held, so that is all that can be sold.
-                </p>
+                <p className="sub text-warn">Can only sell {fmtShares(result.shares)} sh</p>
               )}
 
+              {/* Where the trade lands, and only that.
+                  Each line used to carry "before → after". The before figures are all on the page
+                  already — the holding two columns to the left, the cash in its own tile, the
+                  weight beside the holding — so the arrow spent three lines restating what was
+                  already visible, and in this narrow column each one wrapped onto two. */}
               <dl className="mt-2 space-y-0.5 border-t border-line-soft pt-2 font-mono text-[12.5px] tabular-nums">
-                {/* Where the position lands. The whole reason the box changed meaning: the number
-                    typed is a movement, so the resulting holding has to be stated, not inferred. */}
                 <div className="flex justify-between gap-2">
-                  <dt className="text-ink-soft">Holding</dt>
-                  <dd>
-                    {fmtShares(stock.shares)} &rarr; {fmtShares(result.targetShares)} sh
-                  </dd>
+                  <dt className="text-ink-soft">Total</dt>
+                  <dd>{fmtShares(result.targetShares)} sh</dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-ink-soft">Cash</dt>
                   <dd className={result.cashAfter < 0 ? 'text-danger' : ''}>
-                    {money(result.cashBefore)} &rarr; {money(result.cashAfter)}
+                    {money(result.cashAfter)}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-ink-soft">Weight</dt>
                   <dd className={result.withinBand ? '' : 'font-semibold text-danger'}>
-                    {pct(result.weightBefore)} &rarr; {pct(result.weightAfter)}
+                    {pct(result.weightAfter)}
                   </dd>
                 </div>
               </dl>

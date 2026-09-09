@@ -30,40 +30,37 @@ export interface PositionColumn {
   /** Folds below `wide`, and reappears as a strip under each open row. */
   raw?: true;
   /**
-   * Takes only the width its own content needs, leaving the slack to the columns that can use it.
+   * Pinned to an exact width, rather than left to grow with the window.
    *
    * A table laid out automatically hands spare width to every column in proportion, including the
    * ones with nothing to spend it on. Current holdings is three short figures and a badge, none of
    * which grow — so on a wide window it was drawing about 225px to hold 110px of text, and the
    * trade columns beside it, whose figures and buttons do wrap, were the ones going short.
    *
-   * `w-[1%]` is the standard way to say this in a table: a width small enough that the browser
-   * settles the column at its own content and gives the remainder to the columns left auto.
-   */
-  tight?: true;
-  /**
-   * Held to a floor wide enough for its move line on one line.
+   * Shrinking it to its bare content (107px) went too far the other way and cramped the heading.
    *
-   * The two band-edge columns carry the same "SELL 1,645 sh" over "$15,925.00" that every other
-   * destination column does, but their headers are the shortest on the row — and a table hands out
-   * spare width in proportion to a column's longest content, headers included. So they were
-   * settling around 120px and breaking "SELL 325 sh" across two lines while the columns beside
-   * them, with far longer headings, sat 70px wider on identical figures.
+   * Two things learned by measuring, both worth not rediscovering. `min-width` does nothing at all
+   * to a table column — Chrome's table algorithm ignores it, so an earlier `min-w-[8.5rem]` on the
+   * band columns was a no-op and what actually widened them was shortening their headings. And a
+   * stated width is a *weight*, not a promise: this table wants more width than it is given, so
+   * every column is scaled and a column asking for 145px settles between 137 and 160 depending on
+   * the window. Widening a column means giving it a bigger number than its content would ask for;
+   * making one smaller means giving it a smaller one.
    */
-  roomy?: true;
+  width?: string;
 }
 
 export const POSITION_COLUMNS: PositionColumn[] = [
   { label: 'Ticker', lead: true },
-  { label: 'Current holdings', lead: true, tight: true },
+  { label: 'Current holdings', lead: true, width: 'w-[145px]' },
   { label: 'Target holdings' },
   /* "Lot closest to target" — the "closest" is dropped. The column sits beside the band edge it
      belongs to, so which lot is meant is never in question, and the word was long enough to earn
      the column width it did not need. */
   { label: 'Lot to target', lead: true },
-  { label: 'Lower band', raw: true, roomy: true },
+  { label: 'Lower band', raw: true },
   { label: 'Lot to lower band' },
-  { label: 'Upper band', raw: true, roomy: true },
+  { label: 'Upper band', raw: true },
   { label: 'Lot to upper band' },
   /* "Shares with current cash" wrapped to four lines, and since every header shares one row that
      single label set the height of the whole bar. The sub-line under the figure spells the
@@ -78,8 +75,7 @@ function headClass(column: PositionColumn, index: number): string {
     'th',
     column.lead && 'th-lead',
     column.raw && FOLD,
-    column.tight && 'w-[1%]',
-    column.roomy && 'min-w-[8.5rem]',
+    column.width,
     index === 0 && 'rounded-tl-lg',
     index === POSITION_COLUMNS.length - 1 && 'rounded-tr-lg',
   ]
