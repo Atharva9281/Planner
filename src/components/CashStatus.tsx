@@ -49,12 +49,12 @@ export default function CashStatus({ portfolio }: { portfolio: Portfolio }) {
         {/* Amber is a band breach; red is an overdraft. A balance that has gone below zero is not
             a mandate question any more, and it reads the way every ledger writes one. */}
         <div className="flex items-baseline justify-between gap-3">
-          <div className={`${figure} ${short ? 'text-sell' : status === 'ok' ? 'text-buy' : 'text-warn'}`}>
+          <div className={`${figure} ${short ? 'text-danger' : status === 'ok' ? 'text-ok' : 'text-warn'}`}>
             {money(portfolio.cash)}
           </div>
           <div
             className={`font-mono text-[14px] tabular-nums ${
-              short ? 'font-semibold text-sell' : status === 'ok' ? 'text-ink-soft' : 'font-semibold text-warn'
+              short ? 'font-semibold text-danger' : status === 'ok' ? 'text-ink-soft' : 'font-semibold text-warn'
             }`}
           >
             {pct(cp)}

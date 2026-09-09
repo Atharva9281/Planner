@@ -240,7 +240,7 @@ export default function ImportDialog({
                 <h3>What the files do not carry</h3>
                 <span
                   className={`font-mono text-[12.5px] tabular-nums ${
-                    issues.unpriced.length > 0 ? 'font-semibold text-warn' : 'text-buy'
+                    issues.unpriced.length > 0 ? 'font-semibold text-warn' : 'text-ok'
                   }`}
                 >
                   {issues.unpriced.length > 0

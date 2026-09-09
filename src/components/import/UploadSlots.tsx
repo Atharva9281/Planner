@@ -64,9 +64,9 @@ function SlotCard({
 
   const filled = Boolean(slot);
   const tone = error
-    ? 'border-sell bg-sell-soft'
+    ? 'border-danger bg-danger-soft'
     : filled
-      ? 'border-buy bg-buy-soft'
+      ? 'border-ok bg-ok-soft'
       : over
         ? 'border-accent bg-accent-soft'
         : 'border-line bg-paper';
@@ -101,7 +101,7 @@ function SlotCard({
       <div className="flex items-baseline gap-2">
         <span
           className={`badge ${
-            filled && !error ? 'bg-buy text-white' : 'bg-accent-soft text-accent'
+            filled && !error ? 'bg-ok text-white' : 'bg-accent-soft text-accent'
           }`}
         >
           {filled && !error ? '✓' : step}
@@ -130,14 +130,14 @@ function SlotCard({
             <button className="btn-ghost" disabled={busy} onClick={() => input.current?.click()}>
               {slot.file ? 'Replace' : 'Use a different model'}
             </button>
-            <button className="btn-ghost hover:border-sell hover:text-sell" onClick={onClear}>
+            <button className="btn-ghost hover:border-danger hover:text-danger" onClick={onClear}>
               Remove
             </button>
           </div>
         </div>
       ) : (
         <div className="mt-3">
-          {error && <p className="mb-2.5 text-[13px] leading-relaxed text-sell">{error}</p>}
+          {error && <p className="mb-2.5 text-[13px] leading-relaxed text-danger">{error}</p>}
           <button className="btn-outline" disabled={busy} onClick={() => input.current?.click()}>
             {busy ? 'Reading…' : `Choose the ${kind} file`}
           </button>

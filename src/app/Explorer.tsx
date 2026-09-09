@@ -398,7 +398,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
                 {/* A disabled button with no reason beside it reads as a broken button. Say what
                     is wrong and name the rows, so the fix is one glance away. */}
                 {unpriced.length > 0 && (
-                  <span className="max-w-[28rem] text-right text-[13px] font-semibold text-sell">
+                  <span className="max-w-[28rem] text-right text-[13px] font-semibold text-danger">
                     {unpriced.length} position{unpriced.length === 1 ? '' : 's'} without a price
                     {' ('}
                     {unpriced.map((s) => s.sym).join(', ')}

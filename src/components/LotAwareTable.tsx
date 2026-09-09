@@ -255,7 +255,7 @@ function SpendTheCash({
             {/* Where that lands as a share of the account, rather than how far past the ceiling
                 it is in shares. The percentage is the language the whole page measures in, and it
                 answers the breach question by itself: red is the ceiling being passed. */}
-            <span className={`sub ${breaches ? 'font-semibold text-sell' : ''}`}>
+            <span className={`sub ${breaches ? 'font-semibold text-danger' : ''}`}>
               {pct(landingPct)}
             </span>
           </>
@@ -403,7 +403,7 @@ function BandStrip({
           </span>
           <span
             className={`font-mono text-[12px] ${
-              landing > maxShares ? 'font-semibold text-sell' : 'text-ink-soft'
+              landing > maxShares ? 'font-semibold text-danger' : 'text-ink-soft'
             }`}
           >
             {pct(landingPct)}
@@ -455,12 +455,12 @@ export default function LotAwareTable({
                while this sits here. It is a fault in the page, not a gap on a line. */
             if (s.price <= 0) {
               return (
-                <tr key={s.id} className="bg-sell-soft shadow-[inset_4px_0_0_0_var(--color-sell)]">
+                <tr key={s.id} className="bg-danger-soft shadow-[inset_4px_0_0_0_var(--color-danger)]">
                   <td className="td font-sans text-[15px] font-bold">
                     {s.sym}
                     {/* Its own line, sized to its text: inline it collides with a four-letter
                         ticker, and full width it reads as a banner rather than a label. */}
-                    <span className="badge mt-1.5 block w-fit bg-sell text-white">
+                    <span className="badge mt-1.5 block w-fit bg-danger text-white">
                       NEEDS A PRICE
                     </span>
                     <span className="sub">
@@ -475,7 +475,7 @@ export default function LotAwareTable({
                           missing from the account total, which drags every other weight up. A
                           row holding nothing distorts no total at all — zero shares are worth
                           zero at any price — it simply cannot be turned into a share count. */}
-                      <span className="font-sans text-[13.5px] font-semibold text-sell">
+                      <span className="font-sans text-[13.5px] font-semibold text-danger">
                         {s.shares > 0
                           ? `${fmtShares(s.shares)} sh held with no price, so this position is missing from the account total and every weight on the page is overstated.`
                           : 'No price, so this target cannot be turned into a share count.'}{' '}
@@ -510,7 +510,7 @@ export default function LotAwareTable({
             const open = collapse.isOpen(s.id, settled);
 
             const rawBuy = rawMaxBuy(portfolio, s);
-            const breach = r.mandatory ? 'shadow-[inset_3px_0_0_0_var(--color-sell)]' : '';
+            const breach = r.mandatory ? 'shadow-[inset_3px_0_0_0_var(--color-danger)]' : '';
 
             if (!open) {
               return (
@@ -526,7 +526,7 @@ export default function LotAwareTable({
                   <td className="td py-2.5 align-middle whitespace-nowrap">
                     <span className="font-semibold">{fmtShares(s.shares)} sh</span>
                     {r.mandatory && (
-                      <span className="badge ml-2.5 bg-sell-soft text-sell">
+                      <span className="badge ml-2.5 bg-danger-soft text-danger">
                         {r.mandatory} band
                       </span>
                     )}
@@ -634,7 +634,7 @@ export default function LotAwareTable({
                     <span className="text-[15px] font-semibold">{fmtShares(s.shares)} sh</span>
                     {/* Where it sits, and nothing about where it may sit — the band is stated in
                         full one column to the left. */}
-                    <span className={`sub ${r.mandatory ? 'font-semibold text-sell' : ''}`}>
+                    <span className={`sub ${r.mandatory ? 'font-semibold text-danger' : ''}`}>
                       {pct(r.weight)}
                     </span>
                     <span className="sub">{money(s.shares * s.price)}</span>
@@ -643,7 +643,7 @@ export default function LotAwareTable({
                         weight above it were not already saying. The shut row has always read
                         "over band" alone, so the two now agree. */}
                     {r.mandatory && (
-                      <span className="badge mt-2 bg-sell-soft text-sell">
+                      <span className="badge mt-2 bg-danger-soft text-danger">
                         {r.mandatory} band
                       </span>
                     )}
@@ -687,7 +687,7 @@ export default function LotAwareTable({
                         badge={
                           <span
                             className={`badge ${
-                              r.target.isLot ? 'bg-buy-soft text-buy' : 'bg-warn-soft text-warn'
+                              r.target.isLot ? 'bg-ok-soft text-ok' : 'bg-warn-soft text-warn'
                             }`}
                           >
                             {r.target.isLot ? 'LOT' : 'raw'}

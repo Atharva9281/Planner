@@ -70,7 +70,7 @@ export default function BandBar({
       {/* how far past the band the position sits */}
       {overshoot && overshoot.width > 0.4 && (
         <div
-          className="absolute top-1/2 h-2 -translate-y-1/2 bg-sell/20"
+          className="absolute top-1/2 h-2 -translate-y-1/2 bg-danger/20"
           style={{ left: `${overshoot.left}%`, width: `${overshoot.width}%` }}
         />
       )}
@@ -97,7 +97,7 @@ export default function BandBar({
       <div
         className={`absolute top-1/2 h-[17px] w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full
                     ring-2 ring-panel transition-[left,background-color] duration-500 ease-out
-                    ${breached ? 'bg-sell' : 'bg-ink'}`}
+                    ${breached ? 'bg-danger' : 'bg-ink'}`}
         style={{ left: `${here}%` }}
       />
     </div>

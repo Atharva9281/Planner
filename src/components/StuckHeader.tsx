@@ -88,7 +88,7 @@ export default function StuckHeader({
 
           <span
             className={`font-mono text-[16px] font-semibold tabular-nums ${
-              short ? 'text-sell' : status === 'ok' ? 'text-buy' : 'text-warn'
+              short ? 'text-danger' : status === 'ok' ? 'text-ok' : 'text-warn'
             }`}
           >
             {money(portfolio.cash)}
@@ -96,7 +96,7 @@ export default function StuckHeader({
           <span
             className={`font-mono text-[13.5px] tabular-nums ${
               short
-                ? 'font-semibold text-sell'
+                ? 'font-semibold text-danger'
                 : status === 'ok'
                   ? 'text-ink-soft'
                   : 'font-semibold text-warn'
@@ -105,7 +105,7 @@ export default function StuckHeader({
             {pct(cp)}
           </span>
           <span
-            className={short ? `${caption} text-sell` : status === 'ok' ? caption : `${caption} text-warn`}
+            className={short ? `${caption} text-danger` : status === 'ok' ? caption : `${caption} text-warn`}
           >
             cash
             {status === 'above' && ' · above the band'}

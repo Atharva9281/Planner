@@ -23,10 +23,27 @@
   --color-accent-deep: #1f3162;
   --color-head: #1f2e52;
 
-  --color-buy: #0e7a4e;
-  --color-buy-soft: #e9f7ef;
-  --color-sell: #b3261e;
-  --color-sell-soft: #fcebea;
+  /*
+   * Two different ideas wear these same two colours, and they used to share one pair of tokens.
+   *
+   *   buy / sell      the direction of a trade
+   *   ok / danger     a state — this is fine, this is at fault
+   *
+   * The CFP reads a buy as red and a sell as green, so the trade pair is flipped from where this
+   * started. The status pair is held separately for exactly that reason: with one pair doing both
+   * jobs, flipping the trade colours would have turned every error message, band breach and
+   * overdraft green, and every "inside the band" red. Status never flips.
+   */
+  --color-buy: #b3261e;
+  --color-buy-soft: #fcebea;
+  --color-sell: #0e7a4e;
+  --color-sell-soft: #e9f7ef;
+
+  --color-ok: #0e7a4e;
+  --color-ok-soft: #e9f7ef;
+  --color-danger: #b3261e;
+  --color-danger-soft: #fcebea;
+
   --color-warn: #9a5b00;
   --color-warn-soft: #fff4e0;
 
@@ -187,13 +204,24 @@
 
   /* ---- buttons ---- */
 
+  /* The hovers follow the fills: a buy darkens toward red, a sell toward green. */
   .btn-buy {
-    @apply btn bg-buy px-3 py-1.5 text-white hover:bg-[#095c39]
+    @apply btn bg-buy px-3 py-1.5 text-white hover:bg-[#8f1f19]
            disabled:bg-[#ccd1d9] disabled:text-white;
   }
 
   .btn-sell {
-    @apply btn bg-sell px-3 py-1.5 text-white hover:bg-[#8f1f19]
+    @apply btn bg-sell px-3 py-1.5 text-white hover:bg-[#095c39]
+           disabled:bg-[#ccd1d9] disabled:text-white;
+  }
+
+  /*
+   * Destroying something is not selling something. Discard the portfolio, start over with both
+   * files — these wore `btn-sell` only because it was the red one, and a sell is green now. They
+   * are red because they are irreversible, which is a different fact about them.
+   */
+  .btn-danger {
+    @apply btn bg-danger px-3 py-1.5 text-white hover:bg-[#8f1f19]
            disabled:bg-[#ccd1d9] disabled:text-white;
   }
 

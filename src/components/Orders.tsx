@@ -77,10 +77,15 @@ export default function Orders({ state }: { state: ExplorerState }) {
                 <td className="td text-right">{money(o.price)}</td>
                 <td className="td text-right font-semibold">{money(o.amount)}</td>
                 {/* Signed by what it does to the balance, and coloured to match: money out on a
-                    buy, money in on a sell. */}
+                    buy, money in on a sell.
+
+                    The two colours here used to be the other way round, from back when a buy was
+                    green: the Action column called a buy green while this column called the same
+                    trade's cash red. Now that a buy is red, money-out and buy are the same colour
+                    and the two columns finally agree on a row. */}
                 <td
                   className={`td text-right font-semibold ${
-                    o.cash < 0 ? 'text-sell' : 'text-buy'
+                    o.cash < 0 ? 'text-buy' : 'text-sell'
                   }`}
                 >
                   {o.cash < 0 ? '−' : '+'}

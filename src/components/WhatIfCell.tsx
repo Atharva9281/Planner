@@ -133,13 +133,13 @@ export default function WhatIfCell({
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-ink-soft">Cash</dt>
-                  <dd className={result.cashAfter < 0 ? 'text-sell' : ''}>
+                  <dd className={result.cashAfter < 0 ? 'text-danger' : ''}>
                     {money(result.cashBefore)} &rarr; {money(result.cashAfter)}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-ink-soft">Weight</dt>
-                  <dd className={result.withinBand ? '' : 'font-semibold text-sell'}>
+                  <dd className={result.withinBand ? '' : 'font-semibold text-danger'}>
                     {pct(result.weightBefore)} &rarr; {pct(result.weightAfter)}
                   </dd>
                 </div>
@@ -148,14 +148,14 @@ export default function WhatIfCell({
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <span
                   className={`badge ${
-                    result.withinBand ? 'bg-buy-soft text-buy' : 'bg-sell-soft text-sell'
+                    result.withinBand ? 'bg-ok-soft text-ok' : 'bg-danger-soft text-danger'
                   }`}
                 >
                   {result.withinBand
                     ? 'inside the band'
                     : `outside ${stock.bandMin}–${stock.bandMax}%`}
                 </span>
-                {result.isLot && <span className="badge bg-buy-soft text-buy">clean lot</span>}
+                {result.isLot && <span className="badge bg-ok-soft text-ok">clean lot</span>}
               </div>
 
               <div className="mt-2.5 flex gap-1.5">

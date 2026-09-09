@@ -120,7 +120,7 @@ export function TradeAllResult({
           {notes.length > 0 && ` · ${notes.join(' · ')}`}
         </span>
         {short ? (
-          <span className="ml-2 font-semibold text-sell">
+          <span className="ml-2 font-semibold text-danger">
             Cash <span className="font-mono tabular-nums">{money(outcome.cashAfter)}</span>
           </span>
         ) : (

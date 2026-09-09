@@ -48,7 +48,7 @@ export default function ModelModal({
         <>
           {portfolio.stocks.length > 0 ? (
             <button
-              className="btn-ghost hover:border-sell hover:text-sell"
+              className="btn-ghost hover:border-danger hover:text-danger"
               onClick={onClearAll}
             >
               Clear the whole portfolio
@@ -121,7 +121,7 @@ export default function ModelModal({
                     </td>
                     <td className={TD}>
                       <NumInput
-                        className={`field text-right ${bad ? 'border-sell text-sell' : ''}`}
+                        className={`field text-right ${bad ? 'border-danger text-danger' : ''}`}
                         step="0.5"
                         value={s.bandMin}
                         onCommit={(v) => onField(s.id, 'bandMin', v)}
@@ -129,7 +129,7 @@ export default function ModelModal({
                     </td>
                     <td className={TD}>
                       <NumInput
-                        className={`field text-right ${bad ? 'border-sell text-sell' : ''}`}
+                        className={`field text-right ${bad ? 'border-danger text-danger' : ''}`}
                         step="0.5"
                         value={s.bandMax}
                         onCommit={(v) => onField(s.id, 'bandMax', v)}
@@ -137,7 +137,7 @@ export default function ModelModal({
                     </td>
                     <td className={`${TD} w-10 text-right`}>
                       <button
-                        className="rounded px-1.5 text-lg leading-none text-ink-faint transition-colors hover:text-sell"
+                        className="rounded px-1.5 text-lg leading-none text-ink-faint transition-colors hover:text-danger"
                         title={`Remove ${s.sym} from the model`}
                         onClick={() => onRemoveStock(s.id)}
                       >
@@ -158,7 +158,7 @@ export default function ModelModal({
         </div>
 
         {invalidBand.length > 0 && (
-          <p className="mt-3 rounded-lg bg-sell-soft px-3 py-2 text-[13px] leading-relaxed text-sell">
+          <p className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-[13px] leading-relaxed text-danger">
             {invalidBand.map((s) => s.sym).join(', ')} has a floor above its ceiling, so no share
             count can satisfy the band and nothing will be tradeable.
           </p>

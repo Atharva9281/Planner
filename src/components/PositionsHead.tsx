@@ -29,11 +29,23 @@ export interface PositionColumn {
   lead?: true;
   /** Folds below `wide`, and reappears as a strip under each open row. */
   raw?: true;
+  /**
+   * Takes only the width its own content needs, leaving the slack to the columns that can use it.
+   *
+   * A table laid out automatically hands spare width to every column in proportion, including the
+   * ones with nothing to spend it on. Current holdings is three short figures and a badge, none of
+   * which grow — so on a wide window it was drawing about 225px to hold 110px of text, and the
+   * trade columns beside it, whose figures and buttons do wrap, were the ones going short.
+   *
+   * `w-[1%]` is the standard way to say this in a table: a width small enough that the browser
+   * settles the column at its own content and gives the remainder to the columns left auto.
+   */
+  tight?: true;
 }
 
 export const POSITION_COLUMNS: PositionColumn[] = [
   { label: 'Ticker', lead: true },
-  { label: 'Current holdings', lead: true },
+  { label: 'Current holdings', lead: true, tight: true },
   { label: 'Target holdings' },
   { label: 'Lot closest to target', lead: true },
   { label: 'Lower band', raw: true },
@@ -53,6 +65,7 @@ function headClass(column: PositionColumn, index: number): string {
     'th',
     column.lead && 'th-lead',
     column.raw && FOLD,
+    column.tight && 'w-[1%]',
     index === 0 && 'rounded-tl-lg',
     index === POSITION_COLUMNS.length - 1 && 'rounded-tr-lg',
   ]

@@ -87,7 +87,7 @@ export default function LoadNextAccount({
         }}
         className={`mt-4 rounded-xl border-2 border-dashed px-5 py-6 text-center transition-colors ${
           error
-            ? 'border-sell bg-sell-soft'
+            ? 'border-danger bg-danger-soft'
             : over
               ? 'border-accent bg-accent-soft'
               : 'border-line bg-paper'
@@ -105,7 +105,7 @@ export default function LoadNextAccount({
           }}
         />
 
-        {error && <p className="mb-3 text-[13px] leading-relaxed text-sell">{error}</p>}
+        {error && <p className="mb-3 text-[13px] leading-relaxed text-danger">{error}</p>}
 
         <button
           className="btn-solid px-5 py-2.5 text-[14px]"
@@ -131,7 +131,7 @@ export default function LoadNextAccount({
         </button>
         {/* The other reason to be here: an account on a different mandate. Wears the sell colour
             because it throws the model away as well, which nothing else on this dialog does. */}
-        <button className="btn-sell px-4 py-2.5 text-[13.5px]" onClick={onStartOver}>
+        <button className="btn-danger px-4 py-2.5 text-[13.5px]" onClick={onStartOver}>
           Start over with both files
         </button>
       </div>

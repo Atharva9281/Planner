@@ -45,7 +45,7 @@ export default async function UnlockPage({
                 autoComplete="current-password"
                 aria-label="Password"
                 aria-invalid={error ? true : undefined}
-                className={`field text-center text-[15px] ${error ? 'border-sell' : ''}`}
+                className={`field text-center text-[15px] ${error ? 'border-danger' : ''}`}
               />
               <button type="submit" className="btn-solid px-8 py-3.5 text-[16px]">
                 Unlock
@@ -53,7 +53,7 @@ export default async function UnlockPage({
             </form>
 
             {error && (
-              <p className="mt-4 text-[13.5px] font-semibold text-sell">
+              <p className="mt-4 text-[13.5px] font-semibold text-danger">
                 That password was not right. Try again.
               </p>
             )}
