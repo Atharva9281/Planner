@@ -7,7 +7,6 @@ import {
   affordableShares,
   bandShareLimits,
   highestLotWithinBand,
-  LOT_BAND_TOLERANCE,
   lotAwareTarget,
   lotRounds,
   isTradeable,
@@ -694,25 +693,20 @@ export default function LotAwareTable({
                     ) : (
                       <Destination
                         shares={r.target.goal}
-                        /* A lot that is not simply the nearest one says where it lands: stretched
-                           past the band, or pushed up to the next lot that fits. Both can sit a
-                           long way from the target — on a $316 stock a lot is about a point of
-                           the account — and neither should be discovered after the trade. Silent
-                           on every ordinary row. */
-                        caption={
-                          r.target.stretched || r.target.pushed ? pct(r.goalPct) : undefined
-                        }
+                        /* A lot that is not simply the nearest one says where it lands. On a $316
+                           stock one lot is about a point of the account, so being pushed a rung up
+                           to reach the band can sit a long way from the target — and that should
+                           not be discovered after the trade. Silent on every ordinary row. */
+                        caption={r.target.pushed ? pct(r.goalPct) : undefined}
                         badge={
                           <span
                             className={`badge ${
                               r.target.isLot ? 'bg-ok-soft text-ok' : 'bg-warn-soft text-warn'
                             }`}
                             title={
-                              r.target.stretched
-                                ? `${pct(r.goalPct)} sits just outside the ${s.bandMin}–${s.bandMax}% band. Taken because it is a clean lot and the miss is under ${LOT_BAND_TOLERANCE} of a point; the next lot that fits outright is much further from the target.`
-                                : r.target.pushed
-                                  ? `The nearest lot to the ${s.target}% target does not fit the ${s.bandMin}–${s.bandMax}% band, so this is the nearest one that does. It lands at ${pct(r.goalPct)}.`
-                                  : undefined
+                              r.target.pushed
+                                ? `The nearest lot to the ${s.target}% target does not fit the ${s.bandMin}–${s.bandMax}% band, so this is the nearest one that does. It lands at ${pct(r.goalPct)}.`
+                                : undefined
                             }
                           >
                             {r.target.isLot ? 'LOT' : 'raw'}

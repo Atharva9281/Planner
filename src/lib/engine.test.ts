@@ -687,9 +687,9 @@ describe('turning an amount to trade into where the position lands', () => {
  */
 describe('the lot tolerance', () => {
   /** The user's account, reduced to the one row under test plus a filler holding the total. */
-  const aapl = (bandMin = 2, bandMax = 6, price = 316.22) => {
+  const aapl = (bandMin = 2, bandMax = 6, target = 2.5, price = 316.22) => {
     const stocks: Stock[] = [
-      { id: 'a', sym: 'AAPL', price, target: 2.5, bandMin, bandMax, shares: 127 },
+      { id: 'a', sym: 'AAPL', price, target, bandMin, bandMax, shares: 127 },
       { id: 'f', sym: 'FILL', price: 1, target: 97.5, bandMin: 90, bandMax: 100, shares: 1_572_685 },
     ];
     const p = build(stocks, 0);
@@ -707,23 +707,28 @@ describe('the lot tolerance', () => {
 
     const lt = lotAwareTarget(p, s);
     expect(lt.raw).toBeCloseTo(127.5, 1);
-    // 100 shares are 1.961%, four hundredths of a point under the 2% floor.
-    expect(lt.goal).toBe(100);
+    /* 100 shares are 1.961%, four hundredths of a point under the 2% floor — close enough for the
+       column named after that floor, but this column points at the mandate, and 200 is the
+       nearest lot the mandate actually admits. */
+    expect(lt.goal).toBe(200);
     expect(lt.isLot).toBe(true);
-    // …and the row is told it only fits because of the tolerance.
-    expect(lt.stretched).toBe(true);
+    expect(lt.pushed).toBe(true);
+
+    // The floor column is where the tolerance shows: 100 rather than a jump to 200.
+    expect(lowestLotWithinBand(p, s)).toMatchObject({ lowestLot: 100, isLot: true });
   });
 
-  it('does not flag the position it just told you to hold', () => {
+  it('does not flag the position the floor column just told you to hold', () => {
     const p = aapl();
     const s = stockOf(p, 'AAPL');
-    s.shares = lotAwareTarget(p, s).goal;
+    // The Lot to lower band column answers 100, on the tolerance. Holding it must not then be
+    // reported as a breach: a destination the tool names and then alarms about is not a
+    // destination.
+    s.shares = lowestLotWithinBand(p, s).lowestLot;
 
     expect(s.shares).toBe(100);
     expect(weight(p, s)).toBeLessThan(s.bandMin);
-    // Strictly outside the band, and deliberately not a breach: it is where the model points.
     expect(mandatoryStatus(p, s)).toBeNull();
-    expect(needsDecision(p, s)).toBe(false);
   });
 
   it('takes the next lot up when the nearest one misses by more than the tolerance', () => {
@@ -734,7 +739,6 @@ describe('the lot tolerance', () => {
 
     expect(lt.goal).toBe(200);
     expect(lt.isLot).toBe(true);
-    expect(lt.stretched).toBe(false);
     expect(lt.pushed).toBe(true);
   });
 
@@ -757,31 +761,31 @@ describe('the lot tolerance', () => {
     const lt = lotAwareTarget(aapl(1.5), stockOf(aapl(1.5), 'AAPL'));
     expect(lt.goal).toBe(100);
     expect(lt.isLot).toBe(true);
-    expect(lt.stretched).toBe(false);
     expect(lt.pushed).toBe(false);
   });
 
   it('works the same at the ceiling', () => {
-    // Squeeze the ceiling to 1.9%: the 1.961% lot is now 0.061 of a point *over* it, inside the
-    // tolerance, and the same answer has to come back from the other direction.
-    const p = aapl(0.5, 1.9);
-    const lt = lotAwareTarget(p, stockOf(p, 'AAPL'));
+    /* Squeeze the ceiling to 1.9% and put the target under it at 1.5%. The 100-share lot is now
+       1.961%, six hundredths of a point *over* the ceiling — and the tolerance has to admit it
+       from this side exactly as it does from the floor. Strictly, the highest lot under a 1.9%
+       ceiling is zero. */
+    const p = aapl(0.5, 1.9, 1.5);
+    const s = stockOf(p, 'AAPL');
 
-    expect(lt.goal).toBe(100);
-    expect(lt.isLot).toBe(true);
-    expect(lt.stretched).toBe(true);
-    expect(mandatoryStatus(p, { ...stockOf(p, 'AAPL'), shares: 100 })).toBeNull();
+    expect(highestLotWithinBand(p, s)).toMatchObject({ highestLot: 100, isLot: true });
+    expect(mandatoryStatus(p, { ...s, shares: 100 })).toBeNull();
   });
 
-  it('gives the band-edge lot columns the same answer as the target', () => {
+  it('leaves the three lot columns as a ladder, each a rung above the last', () => {
     const p = aapl();
     const s = stockOf(p, 'AAPL');
 
-    // The strict floor is 103 shares, so without the tolerance this column read 200 — a different
-    // lot from the one the target column named on the very same row.
-    expect(bandShareLimits(p, s).minShares).toBe(103);
+    /* The whole reason the target clamps strictly while the edges clamp tolerantly. Tolerant
+       throughout, the floor lot and the target lot were both 100 and one of the two columns was
+       carrying no information. */
     expect(lowestLotWithinBand(p, s).lowestLot).toBe(100);
-    expect(lowestLotWithinBand(p, s).lowestLot).toBe(lotAwareTarget(p, s).goal);
+    expect(lotAwareTarget(p, s).goal).toBe(200);
+    expect(highestLotWithinBand(p, s).highestLot).toBe(300);
   });
 
   it('leaves the band edges themselves strict', () => {

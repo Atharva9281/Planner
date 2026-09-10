@@ -120,11 +120,6 @@ export interface LotAwareTarget {
   /** True when `goal` is a clean lot rather than the raw fallback. */
   isLot: boolean;
   /**
-   * True when the lot only qualified because of `LOT_BAND_TOLERANCE` — it sits just outside the
-   * band as written. Surfaced so the row can say so rather than presenting it as a plain fit.
-   */
-  stretched: boolean;
-  /**
    * True when the nearest lot to the target did not fit and this is the nearest one that does.
    *
    * Worth saying out loud, because the gap can be large: on a $316 stock the lot grid moves in
@@ -159,7 +154,6 @@ export function lotAwareTarget(p: Portfolio, s: Stock): LotAwareTarget {
       raw,
       goal: Math.round(raw),
       isLot: false,
-      stretched: false,
       pushed: false,
       lower: s.bandMin,
       upper: s.bandMax,
@@ -167,10 +161,22 @@ export function lotAwareTarget(p: Portfolio, s: Stock): LotAwareTarget {
   }
 
   const nearestLot = Math.round(raw / LOT) * LOT;
-  /* The true lot bounds, not the two columns' displayed figures. Those fall back to a band edge
-     when no lot serves, and clamping to a band edge here would hand back an odd share count while
-     claiming it was a lot. */
-  const { lowestLot, highestLot } = lotBounds(p, s);
+
+  /*
+   * Strict bounds here, tolerant ones on the two band-edge columns. The asymmetry is the point.
+   *
+   * The tolerance exists so a column named after the floor can still answer with a lot when the
+   * only lot near that floor misses it by a hair — AAPL's 100, at 1.961% against a 2% floor. That
+   * is a reasonable thing for the *edge* column to say.
+   *
+   * It is not a reasonable thing for this one. This column answers "where does the model point",
+   * and the model points inside the band. Given the tolerance it answered 100 as well, so the two
+   * columns carried one number, the target column sat outside the mandate, and the row lost a rung
+   * of its ladder. Strict, it answers 200 — the nearest lot the band actually admits.
+   */
+  const { rawFloorShares, rawCeilingShares } = bandShareLimits(p, s);
+  const lowestLot = Math.ceil(rawFloorShares / LOT) * LOT;
+  const highestLot = Math.floor(rawCeilingShares / LOT) * LOT;
 
   /* The band is narrower than the gap between two lots, so no multiple of 100 sits in it at all.
      Only here does the raw count stand — and it has to, because there is no lot to name. */
@@ -179,7 +185,6 @@ export function lotAwareTarget(p: Portfolio, s: Stock): LotAwareTarget {
       raw,
       goal: Math.round(raw),
       isLot: false,
-      stretched: false,
       pushed: false,
       lower: s.bandMin,
       upper: s.bandMax,
@@ -190,13 +195,11 @@ export function lotAwareTarget(p: Portfolio, s: Stock): LotAwareTarget {
      band in either direction. This column is called "Lot to target" and a lot is what it owes: an
      odd share count was a different kind of answer to the question being asked. */
   const goal = Math.min(Math.max(nearestLot, lowestLot), highestLot);
-  const goalPct = t > 0 ? ((goal * s.price) / t) * 100 : 0;
 
   return {
     raw,
     goal,
     isLot: true,
-    stretched: goalPct < s.bandMin || goalPct > s.bandMax,
     pushed: goal !== nearestLot,
     lower: s.bandMin,
     upper: s.bandMax,
