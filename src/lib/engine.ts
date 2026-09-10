@@ -167,8 +167,10 @@ export function lotAwareTarget(p: Portfolio, s: Stock): LotAwareTarget {
   }
 
   const nearestLot = Math.round(raw / LOT) * LOT;
-  const { lowestLot } = lowestLotWithinBand(p, s);
-  const { highestLot } = highestLotWithinBand(p, s);
+  /* The true lot bounds, not the two columns' displayed figures. Those fall back to a band edge
+     when no lot serves, and clamping to a band edge here would hand back an odd share count while
+     claiming it was a lot. */
+  const { lowestLot, highestLot } = lotBounds(p, s);
 
   /* The band is narrower than the gap between two lots, so no multiple of 100 sits in it at all.
      Only here does the raw count stand — and it has to, because there is no lot to name. */
@@ -211,30 +213,103 @@ export const lotRounds = (s: Stock) => s.lotRounding !== false;
 export const isTradeable = (s: Stock) => s.tradeable !== false;
 
 /**
- * The highest multiple of 100 that still sits at or below the band ceiling, the tolerance allowed.
+ * The multiples of 100 the band will actually admit, tolerance allowed.
  *
- * The edge it measures from is the tolerant one, for the same reason the target uses it: a lot the
- * tool is willing to name as a target it must also be willing to name as this column's answer.
- * Reading the strict edge here and the tolerant one there put two different lots in two adjacent
- * columns on the same row.
+ * Internal, and deliberately unsubstituted: this is what the target clamps against. The two
+ * exported functions below fall back to a band edge where no lot serves, and a band edge is not a
+ * lot — clamping to one would hand back an odd share count under a LOT badge.
+ *
+ * `lowestLot > highestLot` is the signal that no multiple of 100 sits inside the band at all.
+ * SNDK at $1,737.99 in a $1.61m account is the case: a 2–5% band is 19 to 46 shares, and the
+ * nearest lots either side of that are 0 and 100.
+ */
+function lotBounds(p: Portfolio, s: Stock): { lowestLot: number; highestLot: number } {
+  const { floor, ceiling } = tolerantShareLimits(p, s);
+  return {
+    lowestLot: Math.ceil(floor / LOT) * LOT,
+    highestLot: Math.floor(ceiling / LOT) * LOT,
+  };
+}
+
+/** The whole-share count the target weight comes to, which the two columns below are judged against. */
+function rawTargetShares(p: Portfolio, s: Stock): number {
+  const t = totalValue(p);
+  return s.price > 0 ? Math.round(((s.target / 100) * t) / s.price) : 0;
+}
+
+/**
+ * What the "Lot to upper band" column answers: the highest lot at or below the ceiling — or the
+ * ceiling itself, where no lot on that side is any use.
+ *
+ * The rule is the CFP's, and it exists because the arithmetic answer was dangerous rather than
+ * merely odd. SNDK's band is 19 to 46 shares and the highest multiple of 100 at or below 46 is
+ * **zero**, so this column read "0 sh" and offered a button that sold a position the model asks
+ * him to hold — and the universal "To highest lot" button would have done it to every row like it
+ * in one press.
+ *
+ * The test is against the target rather than against emptiness, because a lot below the target is
+ * the same failure in a milder form: a column named for the *top* of the range, pointing below
+ * what the model asked for. NVDA in the worked example does this — 300 against a target of 305 —
+ * and now answers 380, the ceiling.
+ *
+ * `isLot` is false whenever the edge has been substituted, so the row can badge the figure as the
+ * raw count it is.
  */
 export function highestLotWithinBand(p: Portfolio, s: Stock): {
   highestLot: number;
   rawCeilingShares: number;
+  isLot: boolean;
 } {
   const { maxShares } = bandShareLimits(p, s);
-  const { ceiling } = tolerantShareLimits(p, s);
-  return { highestLot: Math.floor(ceiling / LOT) * LOT, rawCeilingShares: maxShares };
+  const { highestLot } = lotBounds(p, s);
+  const substitute = highestLot < rawTargetShares(p, s);
+
+  return {
+    highestLot: substitute ? maxShares : highestLot,
+    rawCeilingShares: maxShares,
+    isLot: !substitute,
+  };
 }
 
-/** The sell-side mirror: the lowest multiple of 100 that still sits at or above the band floor. */
+/**
+ * The sell-side mirror: the lowest lot at or above the floor, or the floor itself where no lot on
+ * that side serves.
+ *
+ * Same fault, same shape. SNDK's lowest multiple of 100 at or above its 19-share floor is 100 —
+ * which is 10.8% of the account against a 5% ceiling, so the column offered a $126,873 buy that
+ * broke the mandate it was named after. The answer is the floor, 19.
+ */
 export function lowestLotWithinBand(p: Portfolio, s: Stock): {
   lowestLot: number;
   rawFloorShares: number;
+  isLot: boolean;
 } {
-  const { rawFloorShares } = bandShareLimits(p, s);
-  const { floor } = tolerantShareLimits(p, s);
-  return { lowestLot: Math.ceil(floor / LOT) * LOT, rawFloorShares };
+  const { minShares, rawFloorShares } = bandShareLimits(p, s);
+  const { lowestLot } = lotBounds(p, s);
+  const substitute = lowestLot > rawTargetShares(p, s);
+
+  return {
+    lowestLot: substitute ? minShares : lowestLot,
+    rawFloorShares,
+    isLot: !substitute,
+  };
+}
+
+/**
+ * One band edge's answer, whichever side is asked for, in the one shape both callers want: the
+ * share count to trade to, and whether it is a genuine lot or the band edge standing in for one.
+ */
+export function lotEdgeReach(
+  p: Portfolio,
+  s: Stock,
+  edge: LotEdge,
+): { shares: number; isLot: boolean } {
+  if (edge === 'high') {
+    const { highestLot, isLot } = highestLotWithinBand(p, s);
+    return { shares: highestLot, isLot };
+  }
+  const { lowestLot, isLot } = lowestLotWithinBand(p, s);
+  return { shares: lowestLot, isLot };
 }
 
 /* ------------------------------------------------------------------ */
@@ -445,15 +520,19 @@ export function planToLot(
 ): TradePlan | null {
   if (!isTradeable(s) || !lotRounds(s) || s.price <= 0) return null;
 
-  const goal =
-    edge === 'high' ? highestLotWithinBand(p, s).highestLot : lowestLotWithinBand(p, s).lowestLot;
+  const reach = lotEdgeReach(p, s, edge);
+  const goal = reach.shares;
   const bound = edge === 'high' ? s.bandMax : s.bandMin;
+  const name = `this stock's own ${bound}% ${edge === 'high' ? 'ceiling' : 'floor'}`;
 
+  /* Says which of the two it actually is. Where no lot serves this side the figure is the band
+     edge itself, and calling that "the lot nearest the floor" on the trade log would be a plain
+     falsehood about what was traded. */
   return toDestination(
     p,
     s,
     goal,
-    `the lot nearest this stock's own ${bound}% ${edge === 'high' ? 'ceiling' : 'floor'}`,
+    reach.isLot ? `the lot nearest ${name}` : `${name}, no lot being available`,
     options,
   );
 }

@@ -46,8 +46,8 @@ interface Props {
 function row(p: Portfolio, s: Stock) {
   const { minShares, maxShares } = bandShareLimits(p, s);
   const target = lotAwareTarget(p, s);
-  const { highestLot } = highestLotWithinBand(p, s);
-  const { lowestLot } = lowestLotWithinBand(p, s);
+  const high = highestLotWithinBand(p, s);
+  const low = lowestLotWithinBand(p, s);
   const lots = lotRounds(s);
 
   return {
@@ -58,10 +58,13 @@ function row(p: Portfolio, s: Stock) {
     /** The raw target in whole shares, before the lot rule has any say. */
     targetShares: Math.round(target.raw),
     target,
-    /* The nearest lot inside each edge. Null where the lot rule does not apply at all, which is
-       true of anything bought in dollars with fractional shares. */
-    lowerLot: lots ? lowestLot : null,
-    upperLot: lots ? highestLot : null,
+    /* The nearest lot inside each edge — or the edge itself where no lot on that side serves the
+       position, which is what `isLot` reports. Null where the lot rule does not apply at all,
+       which is true of anything bought in dollars with fractional shares. */
+    lowerLot: lots ? low.lowestLot : null,
+    lowerIsLot: low.isLot,
+    upperLot: lots ? high.highestLot : null,
+    upperIsLot: high.isLot,
     lots,
     /** What the lot-aware goal comes to as a share of the account — stated only where the lot
      *  sits outside the band and needs to account for itself. */
@@ -746,6 +749,18 @@ export default function LotAwareTable({
                   <td className="td cell-fill">
                     <Destination
                       shares={r.lowerLot}
+                      /* Where no lot serves this side, the figure is the floor itself. Badged, or
+                         a plain share count sits under a heading promising a lot. */
+                      badge={
+                        r.lowerIsLot ? undefined : (
+                          <span
+                            className="badge bg-warn-soft text-warn"
+                            title={`No round lot sits between this stock's ${s.bandMin}% floor and its target, so the floor itself is the answer.`}
+                          >
+                            raw
+                          </span>
+                        )
+                      }
                       price={s.price}
                       held={s.shares}
                       canTrade={canTrade}
@@ -780,6 +795,16 @@ export default function LotAwareTable({
                   <td className="td cell-fill">
                     <Destination
                       shares={r.upperLot}
+                      badge={
+                        r.upperIsLot ? undefined : (
+                          <span
+                            className="badge bg-warn-soft text-warn"
+                            title={`No round lot sits between this stock's target and its ${s.bandMax}% ceiling, so the ceiling itself is the answer.`}
+                          >
+                            raw
+                          </span>
+                        )
+                      }
                       price={s.price}
                       held={s.shares}
                       canTrade={canTrade}

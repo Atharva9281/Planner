@@ -128,7 +128,11 @@ describe('reachable lots', () => {
 
     // NVDA holds 280; the lowest reachable lot is 300, above it, so there is no lower lot.
     expect(lowestLotWithinBand(p, stockOf(p, 'NVDA')).lowestLot).toBe(300);
-    expect(highestLotWithinBand(p, stockOf(p, 'NVDA')).highestLot).toBe(300);
+    /* The highest lot at or below NVDA's ceiling is also 300 — but its target is 305, so that lot
+       sits *below* what the model asked for and a column named for the top of the range would be
+       pointing under the target. The ceiling itself, 380, answers instead. */
+    expect(highestLotWithinBand(p, stockOf(p, 'NVDA')).highestLot).toBe(380);
+    expect(highestLotWithinBand(p, stockOf(p, 'NVDA')).isLot).toBe(false);
   });
 
   it('brackets the band with whole-share limits', () => {
@@ -371,10 +375,13 @@ describe('planning a trade to a band-edge lot', () => {
       [{ id: 'a', sym: 'OVER', price: 100, target: 10, bandMin: 8, bandMax: 12, shares: 3000 }],
       10_000,
     );
+    /* 300 is the highest lot under the 12% ceiling, but the target is 310 shares, so the lot sits
+       below it and the ceiling stands in: 372 shares. Selling to a lot here would have sold 72
+       shares further than the mandate asked for. */
     expect(planToLot(p, stockOf(p, 'OVER'), 'high')).toMatchObject({
       action: 'SELL',
-      shares: 2700, // 3,000 → 300, the highest lot at or below the 12% ceiling
-      goalShares: 300,
+      shares: 2628, // 3,000 → 372, the 12% ceiling itself
+      goalShares: 372,
     });
   });
 
@@ -738,8 +745,9 @@ describe('the lot tolerance', () => {
     const p = aapl(2.5, 3);
     const lt = lotAwareTarget(p, stockOf(p, 'AAPL'));
 
-    expect(lowestLotWithinBand(p, stockOf(p, 'AAPL')).lowestLot).toBe(200);
-    expect(highestLotWithinBand(p, stockOf(p, 'AAPL')).highestLot).toBe(100);
+    // Both lot columns fall back to their band edge, having no lot to offer on either side.
+    expect(lowestLotWithinBand(p, stockOf(p, 'AAPL')).lowestLot).toBe(128);
+    expect(highestLotWithinBand(p, stockOf(p, 'AAPL')).highestLot).toBe(153);
     expect(lt.goal).toBe(128);
     expect(lt.isLot).toBe(false);
   });
@@ -782,5 +790,99 @@ describe('the lot tolerance', () => {
     // The Lower band and Upper band columns state the mandate as written, tolerance or no.
     expect(bandShareLimits(p, s).minShares).toBe(103);
     expect(bandShareLimits(p, s).maxShares).toBe(306);
+  });
+});
+
+/**
+ * A band too narrow to hold any round lot.
+ *
+ * Both rows are the CFP's own, and both were dangerous rather than merely untidy. SNDK at
+ * $1,737.99 in a $1.61m account has a 2–5% band of 19 to 46 shares; the multiples of 100 either
+ * side of that are 0 and 100. So the two lot columns offered a buy that broke the ceiling they
+ * were named after, and a sale of the entire position — and the universal buttons would have done
+ * it to every row of this shape in one press.
+ */
+describe('a band with no lot in it', () => {
+  /**
+   * One row at a real price, with a filler position carrying the rest of a $1.61m account and the
+   * cash balance the CFP actually has. The cash matters: a buy is clamped to what it can pay for,
+   * so an account with none would return no plan and prove nothing about the destination chosen.
+   */
+  const CASH = 485_237.22;
+  const account = (sym: string, price: number, shares: number, bandMin = 2, bandMax = 5) => {
+    const stocks: Stock[] = [
+      { id: 'a', sym, price, target: 2.5, bandMin, bandMax, shares },
+      { id: 'f', sym: 'FILL', price: 1, target: 97.5, bandMin: 90, bandMax: 100, shares: 0 },
+    ];
+    const p = build(stocks, CASH);
+    stocks[1].shares = Math.round(1_612_568 - CASH - shares * price);
+    return p;
+  };
+
+  it('offers the band floor where the lowest lot would break the ceiling', () => {
+    const p = account('SNDK', 1737.99, 27);
+    const s = stockOf(p, 'SNDK');
+
+    // 2–5% of the account is 19 to 46 shares. The lowest lot at or above 19 is 100 — which is
+    // 10.8% of the account, more than double the 5% ceiling this column is named for.
+    expect(bandShareLimits(p, s).minShares).toBe(19);
+    expect(bandShareLimits(p, s).maxShares).toBe(46);
+
+    const low = lowestLotWithinBand(p, s);
+    expect(low.lowestLot).toBe(19);
+    expect(low.isLot).toBe(false);
+  });
+
+  it('offers the band ceiling where the highest lot is nothing at all', () => {
+    const p = account('SNDK', 1737.99, 27);
+    const s = stockOf(p, 'SNDK');
+
+    // The highest multiple of 100 at or below 46 shares is zero: the column read "0 sh" and its
+    // button sold a position the model asks him to hold.
+    const high = highestLotWithinBand(p, s);
+    expect(high.highestLot).toBe(46);
+    expect(high.isLot).toBe(false);
+  });
+
+  it('never plans a trade to zero on a position the model wants held', () => {
+    const p = account('SNDK', 1737.99, 27);
+    const plan = planToLot(p, stockOf(p, 'SNDK'), 'high');
+
+    expect(plan).toMatchObject({ action: 'BUY', goalShares: 46 });
+    expect(plan!.resultShares).toBe(46);
+  });
+
+  it('never plans the buy that breaks the ceiling', () => {
+    const p = account('SNDK', 1737.99, 27);
+    const plan = planToLot(p, stockOf(p, 'SNDK'), 'low');
+
+    // Down to the floor, not up to a 100-share lot worth $126,873.
+    expect(plan).toMatchObject({ action: 'SELL', goalShares: 19 });
+    expect(plan!.amount).toBeLessThan(20_000);
+  });
+
+  it('does the same for MU, the other row of this shape', () => {
+    const p = account('MU', 1000.26, 24);
+    const s = stockOf(p, 'MU');
+
+    // 2–5% is 33 to 80 shares, and again no multiple of 100 lies inside it.
+    expect(bandShareLimits(p, s).minShares).toBe(33);
+    expect(bandShareLimits(p, s).maxShares).toBe(80);
+    expect(lowestLotWithinBand(p, s).lowestLot).toBe(33);
+    expect(highestLotWithinBand(p, s).highestLot).toBe(80);
+    // The target itself has no lot either, so it stays raw.
+    expect(lotAwareTarget(p, s).isLot).toBe(false);
+    expect(lotAwareTarget(p, s).goal).toBe(40);
+  });
+
+  it('leaves a row alone when its lots are genuinely usable', () => {
+    // CSX at $49: a 2–5% band is 659 to 1,645 shares, which holds 700 through 1,600 comfortably.
+    const p = account('CSX', 49, 984);
+    const s = stockOf(p, 'CSX');
+
+    expect(lowestLotWithinBand(p, s)).toMatchObject({ lowestLot: 700, isLot: true });
+    expect(highestLotWithinBand(p, s)).toMatchObject({ highestLot: 1600, isLot: true });
+    // …and the target keeps the nearest lot, rather than being pushed up a rung.
+    expect(lotAwareTarget(p, s)).toMatchObject({ goal: 800, isLot: true, pushed: false });
   });
 });
