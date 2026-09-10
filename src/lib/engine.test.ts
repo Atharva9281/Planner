@@ -669,3 +669,118 @@ describe('turning an amount to trade into where the position lands', () => {
     expect(viaDelta.partial).toBe(true);
   });
 });
+
+/**
+ * The tolerance that lets a lot land just outside the band.
+ *
+ * Built from the CFP's own account rather than round numbers, because the case it exists for is
+ * a real one and the margins in it are small enough that invented figures would not reproduce it.
+ * AAPL, $316.22, in an account totalling $1,612,844.98: a 2.5% target is 127.5 shares and the
+ * nearest lot of 100 comes to 1.961% against a 2% floor.
+ */
+describe('the lot tolerance', () => {
+  /** The user's account, reduced to the one row under test plus a filler holding the total. */
+  const aapl = (bandMin = 2, bandMax = 6, price = 316.22) => {
+    const stocks: Stock[] = [
+      { id: 'a', sym: 'AAPL', price, target: 2.5, bandMin, bandMax, shares: 127 },
+      { id: 'f', sym: 'FILL', price: 1, target: 97.5, bandMin: 90, bandMax: 100, shares: 1_572_685 },
+    ];
+    const p = build(stocks, 0);
+    // Nudge the filler so the account totals what the real one did.
+    stocks[1].shares = Math.round(1_612_844.98 - 127 * price);
+    return p;
+  };
+
+  it('takes the lot that misses the floor by less than a tenth of a point', () => {
+    const p = aapl();
+    const s = stockOf(p, 'AAPL');
+
+    expect(totalValue(p)).toBeCloseTo(1_612_844.98, 0);
+    expect(weight(p, s)).toBeCloseTo(2.49, 2);
+
+    const lt = lotAwareTarget(p, s);
+    expect(lt.raw).toBeCloseTo(127.5, 1);
+    // 100 shares are 1.961%, four hundredths of a point under the 2% floor.
+    expect(lt.goal).toBe(100);
+    expect(lt.isLot).toBe(true);
+    // …and the row is told it only fits because of the tolerance.
+    expect(lt.stretched).toBe(true);
+  });
+
+  it('does not flag the position it just told you to hold', () => {
+    const p = aapl();
+    const s = stockOf(p, 'AAPL');
+    s.shares = lotAwareTarget(p, s).goal;
+
+    expect(s.shares).toBe(100);
+    expect(weight(p, s)).toBeLessThan(s.bandMin);
+    // Strictly outside the band, and deliberately not a breach: it is where the model points.
+    expect(mandatoryStatus(p, s)).toBeNull();
+    expect(needsDecision(p, s)).toBe(false);
+  });
+
+  it('takes the next lot up when the nearest one misses by more than the tolerance', () => {
+    // A 2.4% floor puts the same 1.961% lot 0.44 of a point out — far past the tolerance. The
+    // answer is the nearest lot that does fit, not an odd share count: this column owes a lot.
+    const p = aapl(2.4);
+    const lt = lotAwareTarget(p, stockOf(p, 'AAPL'));
+
+    expect(lt.goal).toBe(200);
+    expect(lt.isLot).toBe(true);
+    expect(lt.stretched).toBe(false);
+    expect(lt.pushed).toBe(true);
+  });
+
+  it('keeps the raw count only where no lot fits the band at all', () => {
+    // A 2.5-3% band on a $316 stock spans 128 to 153 shares. Even stretched both ways it reaches
+    // only 123 to 158, and no multiple of 100 lies in that: 100 is under it and 200 over it. With
+    // no lot to name, the raw count is the only honest answer left.
+    const p = aapl(2.5, 3);
+    const lt = lotAwareTarget(p, stockOf(p, 'AAPL'));
+
+    expect(lowestLotWithinBand(p, stockOf(p, 'AAPL')).lowestLot).toBe(200);
+    expect(highestLotWithinBand(p, stockOf(p, 'AAPL')).highestLot).toBe(100);
+    expect(lt.goal).toBe(128);
+    expect(lt.isLot).toBe(false);
+  });
+
+  it('is not claimed when the lot sits inside the band on its own', () => {
+    // A 1.5% floor contains the 1.961% lot outright, so no tolerance is spent.
+    const lt = lotAwareTarget(aapl(1.5), stockOf(aapl(1.5), 'AAPL'));
+    expect(lt.goal).toBe(100);
+    expect(lt.isLot).toBe(true);
+    expect(lt.stretched).toBe(false);
+    expect(lt.pushed).toBe(false);
+  });
+
+  it('works the same at the ceiling', () => {
+    // Squeeze the ceiling to 1.9%: the 1.961% lot is now 0.061 of a point *over* it, inside the
+    // tolerance, and the same answer has to come back from the other direction.
+    const p = aapl(0.5, 1.9);
+    const lt = lotAwareTarget(p, stockOf(p, 'AAPL'));
+
+    expect(lt.goal).toBe(100);
+    expect(lt.isLot).toBe(true);
+    expect(lt.stretched).toBe(true);
+    expect(mandatoryStatus(p, { ...stockOf(p, 'AAPL'), shares: 100 })).toBeNull();
+  });
+
+  it('gives the band-edge lot columns the same answer as the target', () => {
+    const p = aapl();
+    const s = stockOf(p, 'AAPL');
+
+    // The strict floor is 103 shares, so without the tolerance this column read 200 — a different
+    // lot from the one the target column named on the very same row.
+    expect(bandShareLimits(p, s).minShares).toBe(103);
+    expect(lowestLotWithinBand(p, s).lowestLot).toBe(100);
+    expect(lowestLotWithinBand(p, s).lowestLot).toBe(lotAwareTarget(p, s).goal);
+  });
+
+  it('leaves the band edges themselves strict', () => {
+    const p = aapl();
+    const s = stockOf(p, 'AAPL');
+    // The Lower band and Upper band columns state the mandate as written, tolerance or no.
+    expect(bandShareLimits(p, s).minShares).toBe(103);
+    expect(bandShareLimits(p, s).maxShares).toBe(306);
+  });
+});

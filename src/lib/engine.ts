@@ -13,6 +13,31 @@ import { Destination, LotEdge, OffModelHolding, Portfolio, Stock, TradePlan } fr
 
 export const LOT = 100;
 
+/**
+ * How far outside its own band a position may land, in percentage points of total account value,
+ * when landing there is what buys a clean round lot.
+ *
+ * The reason it exists, from the CFP's own file. AAPL at $316.22 in a $1.61m account: a 2.5%
+ * target is 127.5 shares, the nearest lot is 100, and 100 shares come to 1.961% against a 2%
+ * floor — outside the mandate by four hundredths of a point. Without a tolerance the lot is
+ * refused and the raw 128 stands. The next lot that does fit the band is 200, which is $63,244
+ * against a $40,321 target: a 57% overshoot bought purely to stay the right side of a line the
+ * 100 misses by 0.04. Round lots are worth a hair; they are not worth that.
+ *
+ * 0.1 rather than 0.2: it clears this case with room to spare, and it is a number that can be
+ * defended. Symmetric, because there is no argument for the floor that is not also an argument
+ * for the ceiling.
+ *
+ * It is a property of the *band*, not of the lot rule, so everything that asks "is this weight
+ * acceptable" reads it — `mandatoryStatus` included. Applied to the lot maths alone, the tool
+ * would name 100 shares as the target and then flag the position the moment you held it.
+ *
+ * A miss wider than this is not a special case either: the answer becomes the nearest lot that
+ * does fit, which is what the column promises. Only a band too narrow to contain any lot at all
+ * falls back to a raw share count.
+ */
+export const LOT_BAND_TOLERANCE = 0.1;
+
 /* ------------------------------------------------------------------ */
 /* the denominator                                                     */
 /* ------------------------------------------------------------------ */
@@ -68,6 +93,21 @@ export function bandShareLimits(p: Portfolio, s: Stock): BandShareLimits {
   };
 }
 
+/**
+ * The band's two edges in shares, widened by the lot tolerance.
+ *
+ * Only the lot questions read this. `bandShareLimits` above stays strict, because the Lower band
+ * and Upper band columns state the mandate itself and must not quietly report a wider one.
+ */
+function tolerantShareLimits(p: Portfolio, s: Stock): { floor: number; ceiling: number } {
+  const t = totalValue(p);
+  if (s.price <= 0) return { floor: 0, ceiling: 0 };
+  return {
+    floor: (((s.bandMin - LOT_BAND_TOLERANCE) / 100) * t) / s.price,
+    ceiling: (((s.bandMax + LOT_BAND_TOLERANCE) / 100) * t) / s.price,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* the lot-aware target                                                */
 /* ------------------------------------------------------------------ */
@@ -75,19 +115,39 @@ export function bandShareLimits(p: Portfolio, s: Stock): BandShareLimits {
 export interface LotAwareTarget {
   /** The exact, fractional share count the target weight implies. */
   raw: number;
-  /** What to actually aim at: the nearest lot when it fits the band, else the rounded raw count. */
+  /** What to aim at: the nearest lot that fits the band, or the raw count when no lot fits. */
   goal: number;
-  /** True when `goal` is that clean lot rather than a fallback. */
+  /** True when `goal` is a clean lot rather than the raw fallback. */
   isLot: boolean;
+  /**
+   * True when the lot only qualified because of `LOT_BAND_TOLERANCE` — it sits just outside the
+   * band as written. Surfaced so the row can say so rather than presenting it as a plain fit.
+   */
+  stretched: boolean;
+  /**
+   * True when the nearest lot to the target did not fit and this is the nearest one that does.
+   *
+   * Worth saying out loud, because the gap can be large: on a $316 stock the lot grid moves in
+   * steps of about a point of the account, so the lot that fits can be half as big again as the
+   * target asked for. The row states where it lands rather than leaving that to be worked out.
+   */
+  pushed: boolean;
   lower: number;
   upper: number;
 }
 
 /**
- * The core check. Take the target weight, convert it to shares, and look at the nearest
- * multiple of 100. If that lot's resulting weight still lands inside the stock's own band, the
- * lot is the answer. If it does not, the raw count wins: the band is a mandate and a tidy share
- * count never justifies breaking it.
+ * The core check. Take the target weight, convert it to shares, and look at the nearest multiple
+ * of 100. If its weight lands inside the band — or within `LOT_BAND_TOLERANCE` of it — that lot is
+ * the answer.
+ *
+ * If it does not, the answer is the nearest lot that *does* fit, not an odd share count. The column
+ * this feeds is called "Lot to target", and a lot is what it owes: answering 128 shares because no
+ * lot was convenient was answering a different question from the one being asked. The raw count
+ * survives for one case only, where it is the sole honest answer — a band so narrow that no
+ * multiple of 100 sits inside it.
+ *
+ * The band is still the mandate. What changed is which side of it a near miss is resolved on.
  */
 export function lotAwareTarget(p: Portfolio, s: Stock): LotAwareTarget {
   const t = totalValue(p);
@@ -95,17 +155,47 @@ export function lotAwareTarget(p: Portfolio, s: Stock): LotAwareTarget {
 
   // A holding the lot rule does not apply to aims at the raw count and nothing else.
   if (!lotRounds(s)) {
-    return { raw, goal: Math.round(raw), isLot: false, lower: s.bandMin, upper: s.bandMax };
+    return {
+      raw,
+      goal: Math.round(raw),
+      isLot: false,
+      stretched: false,
+      pushed: false,
+      lower: s.bandMin,
+      upper: s.bandMax,
+    };
   }
 
   const nearestLot = Math.round(raw / LOT) * LOT;
-  const nearestLotPct = t > 0 ? ((nearestLot * s.price) / t) * 100 : 0;
-  const isLot = nearestLotPct >= s.bandMin && nearestLotPct <= s.bandMax;
+  const { lowestLot } = lowestLotWithinBand(p, s);
+  const { highestLot } = highestLotWithinBand(p, s);
+
+  /* The band is narrower than the gap between two lots, so no multiple of 100 sits in it at all.
+     Only here does the raw count stand — and it has to, because there is no lot to name. */
+  if (lowestLot > highestLot) {
+    return {
+      raw,
+      goal: Math.round(raw),
+      isLot: false,
+      stretched: false,
+      pushed: false,
+      lower: s.bandMin,
+      upper: s.bandMax,
+    };
+  }
+
+  /* The nearest lot to the target, pulled back to the nearest one that fits if it overshoots the
+     band in either direction. This column is called "Lot to target" and a lot is what it owes: an
+     odd share count was a different kind of answer to the question being asked. */
+  const goal = Math.min(Math.max(nearestLot, lowestLot), highestLot);
+  const goalPct = t > 0 ? ((goal * s.price) / t) * 100 : 0;
 
   return {
     raw,
-    goal: isLot ? nearestLot : Math.round(raw),
-    isLot,
+    goal,
+    isLot: true,
+    stretched: goalPct < s.bandMin || goalPct > s.bandMax,
+    pushed: goal !== nearestLot,
     lower: s.bandMin,
     upper: s.bandMax,
   };
@@ -120,13 +210,21 @@ export const lotRounds = (s: Stock) => s.lotRounding !== false;
  */
 export const isTradeable = (s: Stock) => s.tradeable !== false;
 
-/** The highest multiple of 100 that still sits at or below the band ceiling. */
+/**
+ * The highest multiple of 100 that still sits at or below the band ceiling, the tolerance allowed.
+ *
+ * The edge it measures from is the tolerant one, for the same reason the target uses it: a lot the
+ * tool is willing to name as a target it must also be willing to name as this column's answer.
+ * Reading the strict edge here and the tolerant one there put two different lots in two adjacent
+ * columns on the same row.
+ */
 export function highestLotWithinBand(p: Portfolio, s: Stock): {
   highestLot: number;
   rawCeilingShares: number;
 } {
   const { maxShares } = bandShareLimits(p, s);
-  return { highestLot: Math.floor(maxShares / LOT) * LOT, rawCeilingShares: maxShares };
+  const { ceiling } = tolerantShareLimits(p, s);
+  return { highestLot: Math.floor(ceiling / LOT) * LOT, rawCeilingShares: maxShares };
 }
 
 /** The sell-side mirror: the lowest multiple of 100 that still sits at or above the band floor. */
@@ -135,7 +233,8 @@ export function lowestLotWithinBand(p: Portfolio, s: Stock): {
   rawFloorShares: number;
 } {
   const { rawFloorShares } = bandShareLimits(p, s);
-  return { lowestLot: Math.ceil(rawFloorShares / LOT) * LOT, rawFloorShares };
+  const { floor } = tolerantShareLimits(p, s);
+  return { lowestLot: Math.ceil(floor / LOT) * LOT, rawFloorShares };
 }
 
 /* ------------------------------------------------------------------ */
@@ -144,11 +243,24 @@ export function lowestLotWithinBand(p: Portfolio, s: Stock): {
 
 export type MandatoryStatus = 'over' | 'under' | null;
 
-/** A stock is mandatory the moment it is outside its own band in either direction. */
+/**
+ * A stock is mandatory the moment it is outside its own band in either direction, by more than
+ * the lot tolerance.
+ *
+ * The tolerance belongs here as much as it belongs to the lot maths, and for a plain reason: with
+ * it in one place and not the other, the tool names 100 shares as the target for a row and then
+ * paints that row red the instant the advisor holds 100 shares. A target you cannot reach without
+ * tripping the alarm is not a target.
+ *
+ * The cost, stated plainly: a position that drifts to 1.96% against a 2% floor no longer reads as
+ * a breach. At these account sizes that is well inside a day's price movement, and the exact
+ * weight is printed on the row beside the band either way — nothing is hidden, it just stops
+ * shouting about four hundredths of a point.
+ */
 export function mandatoryStatus(p: Portfolio, s: Stock): MandatoryStatus {
   const w = weight(p, s);
-  if (w > s.bandMax) return 'over';
-  if (w < s.bandMin) return 'under';
+  if (w > s.bandMax + LOT_BAND_TOLERANCE) return 'over';
+  if (w < s.bandMin - LOT_BAND_TOLERANCE) return 'under';
   return null;
 }
 
