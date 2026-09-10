@@ -74,7 +74,7 @@ describe('applying a trade', () => {
 
   it('leaves total account value unchanged, since a trade only swaps cash for shares', () => {
     const before = sampleState();
-    const after = sell(buy(before, 'MU'), 'MSFT');
+    const after = sell(buy(before, 'MU'), 'MSFT', 'lowlot');
     expect(totalValue(after.portfolio)).toBeCloseTo(totalValue(before.portfolio), 6);
   });
 
@@ -98,7 +98,7 @@ describe('undo', () => {
 
   it('reverses a sell exactly', () => {
     const before = sampleState();
-    const after = undoLast(sell(before, 'MSFT'));
+    const after = undoLast(sell(before, 'MSFT', 'lowlot'));
 
     expect(stockOf(after, 'MSFT').shares).toBe(600);
     expect(after.portfolio.cash).toBeCloseTo(38000, 6);
@@ -107,7 +107,7 @@ describe('undo', () => {
   it('unwinds a stack of trades one at a time', () => {
     const before = sampleState();
     let state = buy(before, 'MU');
-    state = sell(state, 'MSFT');
+    state = sell(state, 'MSFT', 'lowlot');
     state = buy(state, 'NVDA');
     expect(state.log).toHaveLength(3);
 
@@ -323,7 +323,7 @@ describe('editing', () => {
 describe('reset everything', () => {
   it('undoes every trade and returns holdings to the baseline', () => {
     let state = buy(sampleState(), 'MU');
-    state = sell(state, 'MSFT');
+    state = sell(state, 'MSFT', 'lowlot');
     expect(state.log).toHaveLength(2);
 
     state = resetAll(state);
@@ -392,7 +392,9 @@ describe('taking every position to one destination', () => {
       const goal = destinationShares(before.portfolio, s, 'target')!;
       expect(s.shares).toBe(goal);
     }
-    expect(outcome.traded).toBe(5);
+    /* Four, not five: MSFT holds 600 and its target lot is 600, so the press finds nothing to
+       do on that row. */
+    expect(outcome.traded).toBe(4);
     expect(outcome.noDestination).toBe(0);
   });
 
@@ -525,7 +527,7 @@ describe('undoing a whole press', () => {
   it('takes back every trade one universal button made, in one go', () => {
     const before = sampleState();
     const { state } = tradeAll(before, 'target');
-    expect(state.log.length).toBe(5);
+    expect(state.log.length).toBe(4);
 
     const back = undoLast(state);
     expect(back.log).toHaveLength(0);
@@ -548,6 +550,6 @@ describe('undoing a whole press', () => {
   it('counts what the next undo would take back', () => {
     expect(undoSize(sampleState())).toBe(0);
     expect(undoSize(buy(sampleState(), 'MU'))).toBe(1);
-    expect(undoSize(tradeAll(sampleState(), 'target').state)).toBe(5);
+    expect(undoSize(tradeAll(sampleState(), 'target').state)).toBe(4);
   });
 });

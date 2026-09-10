@@ -194,7 +194,25 @@ export function lotAwareTarget(p: Portfolio, s: Stock): LotAwareTarget {
   /* The nearest lot to the target, pulled back to the nearest one that fits if it overshoots the
      band in either direction. This column is called "Lot to target" and a lot is what it owes: an
      odd share count was a different kind of answer to the question being asked. */
-  const goal = Math.min(Math.max(nearestLot, lowestLot), highestLot);
+  const nearest = Math.min(Math.max(nearestLot, lowestLot), highestLot);
+
+  /*
+   * The higher lot first, where the nearer one is already the floor column's answer.
+   *
+   * The CFP's rule, and it is a test rather than a preference for buying: a column showing the
+   * same share count as the column beside it is a column doing no work. CVS is the case — its
+   * band admits 400 through 800, the nearest lot to a 420-share target is 400, and Lot to lower
+   * band answers 400 as well. Stepping to 500 gives the row three distinct rungs.
+   *
+   * Not a blanket round-up, which is what makes CSX right: its nearest lot is 800 against a floor
+   * lot of 700, the two already differ, and 900 would be further from the target for nothing.
+   *
+   * Only where the band has room for the step. NVDA's 9-15% admits one lot, 300, so the clash
+   * stands — breaking the mandate to separate two columns would be the wrong trade.
+   */
+  const floorLot = lowestLotWithinBand(p, s);
+  const clashes = floorLot.isLot && nearest === floorLot.lowestLot;
+  const goal = clashes && nearest + LOT <= highestLot ? nearest + LOT : nearest;
 
   return {
     raw,

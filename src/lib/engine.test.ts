@@ -80,11 +80,14 @@ describe('lot-aware target', () => {
   it('takes the nearest 100-share lot when its weight lands inside the band', () => {
     const p = samplePortfolio();
 
-    // MSFT: raw 546.08 → nearest lot 500 → 36.62%, inside 35–45.
+    /* MSFT: raw 546.08, nearest lot 500 — which is also the lowest lot its band admits, and the
+       Lot to lower band column's answer. So the target steps a rung up to 600, which the 45%
+       ceiling still allows. */
     const msft = lotAwareTarget(p, stockOf(p, 'MSFT'));
     expect(msft.raw).toBeCloseTo(546.08, 2);
-    expect(msft.goal).toBe(500);
+    expect(msft.goal).toBe(600);
     expect(msft.isLot).toBe(true);
+    expect(lowestLotWithinBand(p, stockOf(p, 'MSFT')).lowestLot).toBe(500);
 
     // MU: raw 950.80 → nearest lot 1000 → 21.04%, inside 16–24.
     expect(lotAwareTarget(p, stockOf(p, 'MU')).goal).toBe(1000);
@@ -167,8 +170,8 @@ describe('mandatory status', () => {
 describe('needs a decision', () => {
   it('is true while the holding has not reached the lot-aware target', () => {
     const p = samplePortfolio();
-    // MSFT sits at 600 against a goal of 500, so the model is still asking for something.
-    expect(needsDecision(p, stockOf(p, 'MSFT'))).toBe(true);
+    // MU sits at 940 against a goal of 1,000, so the model is still asking for something.
+    expect(needsDecision(p, stockOf(p, 'MU'))).toBe(true);
   });
 
   it('is false once the holding sits on the target inside its band', () => {
@@ -274,18 +277,24 @@ describe('planning a trade to the target', () => {
   });
 
   it('sells down to it from the other side, off the same call', () => {
-    const p = samplePortfolio();
-    const plan = planToTarget(p, stockOf(p, 'MSFT'))!;
+    /* Built rather than taken from the sample: every position there now sits at or below its
+       target lot, so the sample has no sell-to-target left to demonstrate. 4,000 shares at $100 in
+       a $500,000 account is 80% against a 10% target. */
+    const p = build(
+      [{ id: 'a', sym: 'BIG', price: 100, target: 10, bandMin: 8, bandMax: 12, shares: 4000 }],
+      100_000,
+    );
+    const plan = planToTarget(p, stockOf(p, 'BIG'))!;
 
     expect(plan).toMatchObject({
       action: 'SELL',
-      shares: 100, // 600 → 500
+      shares: 3500, // 4,000 → 500
       goalShares: 500,
       resultShares: 500,
       resultIsLot: true,
       partial: false,
     });
-    expect(plan.amount).toBeCloseTo(100 * 412.3, 6);
+    expect(plan.amount).toBeCloseTo(3500 * 100, 6);
   });
 
   it('fills partially and says so when the cash runs out first', () => {
@@ -756,12 +765,15 @@ describe('the lot tolerance', () => {
     expect(lt.isLot).toBe(false);
   });
 
-  it('is not claimed when the lot sits inside the band on its own', () => {
-    // A 1.5% floor contains the 1.961% lot outright, so no tolerance is spent.
-    const lt = lotAwareTarget(aapl(1.5), stockOf(aapl(1.5), 'AAPL'));
-    expect(lt.goal).toBe(100);
-    expect(lt.isLot).toBe(true);
-    expect(lt.pushed).toBe(false);
+  it('steps up a rung when the nearest lot is the floor column\'s answer', () => {
+    /* A 1.5% floor contains the 100-share lot outright, so no tolerance is spent here — and the
+       target still moves to 200, because 100 is what the Lot to lower band column answers and two
+       columns carrying one number is what the step exists to prevent. */
+    const p = aapl(1.5);
+    const s = stockOf(p, 'AAPL');
+
+    expect(lowestLotWithinBand(p, s)).toMatchObject({ lowestLot: 100, isLot: true });
+    expect(lotAwareTarget(p, s)).toMatchObject({ goal: 200, isLot: true });
   });
 
   it('works the same at the ceiling', () => {
@@ -888,5 +900,76 @@ describe('a band with no lot in it', () => {
     expect(highestLotWithinBand(p, s)).toMatchObject({ highestLot: 1600, isLot: true });
     // …and the target keeps the nearest lot, rather than being pushed up a rung.
     expect(lotAwareTarget(p, s)).toMatchObject({ goal: 800, isLot: true, pushed: false });
+  });
+});
+
+/**
+ * The higher lot first, where the nearer one is already the floor column's answer.
+ *
+ * The CFP's rule, and the three rows he settled it on. It is a test, not a preference for buying:
+ * a column showing the same share count as the column beside it is a column doing no work. CSX is
+ * the row that proves it is not a blanket round-up.
+ */
+describe('stepping the target lot up a rung', () => {
+  const TOTAL = 1_612_801.75;
+  const at = (sym: string, price: number, shares: number, bandMin: number, bandMax: number) => {
+    const stocks: Stock[] = [
+      { id: 'a', sym, price, target: 2.5, bandMin, bandMax, shares },
+      { id: 'f', sym: 'FILL', price: 1, target: 90, bandMin: 80, bandMax: 99, shares: 0 },
+    ];
+    stocks[1].shares = Math.round(TOTAL - shares * price);
+    return build(stocks, 0);
+  };
+
+  it('steps CVS to 500, where 400 is both the nearest lot and the floor lot', () => {
+    const p = at('CVS', 96.07, 659, 2, 5);
+    const s = stockOf(p, 'CVS');
+
+    // The band runs 336 to 839 shares, so 400 through 800 all fit and there is room to step.
+    expect(bandShareLimits(p, s)).toMatchObject({ minShares: 336, maxShares: 839 });
+    expect(lowestLotWithinBand(p, s).lowestLot).toBe(400);
+    expect(lotAwareTarget(p, s).goal).toBe(500);
+  });
+
+  it('steps GOOGL to 200 even though its band holds only two lots', () => {
+    const p = at('GOOGL', 338.36, 83, 2, 5);
+    const s = stockOf(p, 'GOOGL');
+
+    /* 96 to 238 shares admits 100 and 200 and nothing else, so the step lands on the same figure
+       the ceiling column shows. Still worth taking: the alternative leaves the target column
+       repeating the floor column, and the CFP would rather the clash sat at the top. */
+    expect(lowestLotWithinBand(p, s).lowestLot).toBe(100);
+    expect(lotAwareTarget(p, s).goal).toBe(200);
+    expect(highestLotWithinBand(p, s).highestLot).toBe(200);
+  });
+
+  it('leaves CSX at 800, because its nearest lot already differs from its floor lot', () => {
+    const p = at('CSX', 49, 984, 2, 5);
+    const s = stockOf(p, 'CSX');
+
+    /* The row that makes this a test rather than a rule. 800 is the nearest lot to an 823-share
+       target and the floor lot is 700, so they already differ — and 900 would be four times
+       further from what the model asked for, bought for nothing. */
+    expect(lowestLotWithinBand(p, s).lowestLot).toBe(700);
+    expect(lotAwareTarget(p, s)).toMatchObject({ goal: 800, pushed: false });
+  });
+
+  it('does not step where the band has no room for the next rung', () => {
+    // NVDA's 9-15% band admits exactly one lot, 300. The clash stands rather than the mandate
+    // being broken to separate two columns.
+    const p = samplePortfolio();
+    const s = stockOf(p, 'NVDA');
+
+    expect(lowestLotWithinBand(p, s).lowestLot).toBe(300);
+    expect(lotAwareTarget(p, s).goal).toBe(300);
+  });
+
+  it('does not step where the floor column is showing a band edge rather than a lot', () => {
+    // SNDK has no lot anywhere in its band, so there is no clash to resolve and nothing to step.
+    const p = at('SNDK', 1737.99, 27, 2, 5);
+    const s = stockOf(p, 'SNDK');
+
+    expect(lowestLotWithinBand(p, s).isLot).toBe(false);
+    expect(lotAwareTarget(p, s)).toMatchObject({ goal: 23, isLot: false });
   });
 });

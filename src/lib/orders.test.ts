@@ -88,7 +88,7 @@ describe('what actually has to be traded', () => {
 
   it('reports a sale as a sell, priced at the position it left', () => {
     let s = sampleState();
-    s = sell(s, 'MSFT', 'target');
+    s = sell(s, 'MSFT', 'lowlot');
 
     const order = netOrders(s).find((o) => o.sym === 'MSFT')!;
     expect(order.action).toBe('SELL');
@@ -98,7 +98,7 @@ describe('what actually has to be traded', () => {
   it('carries the cash the orders move it between', () => {
     let s = sampleState();
     const opening = s.portfolio.cash;
-    s = sell(s, 'MSFT', 'target');
+    s = sell(s, 'MSFT', 'lowlot');
 
     const summary = orderSummary(s);
     expect(summary.cashBefore).toBe(opening);
