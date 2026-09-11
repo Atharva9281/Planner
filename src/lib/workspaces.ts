@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { emptyState, sampleState } from './defaultState';
+import { classify } from './import/parse';
 import { ExplorerState } from './types';
 
 /**
@@ -107,13 +108,59 @@ export function restorable(value: unknown): value is Workspaces {
   });
 }
 
+/**
+ * Brings a restored workspace up to date with rules that have changed since it was saved.
+ *
+ * `tradeable` and `lotRounding` are settled once, at import, and stored on every position — so a
+ * portfolio saved before fixed income became tradeable keeps saying it is not, and no amount of
+ * reloading the page will change it. The files that built it cannot be re-read automatically, so
+ * the alternative to migrating is asking the advisor to load his exports again and lose the
+ * session's work over a rule he never set.
+ *
+ * Deliberately narrow. It only promotes a position the *asset class* says is fixed income and
+ * which is currently marked untradeable — the exact shape the old rule produced. It never demotes
+ * anything, and it never touches a class the tool does not recognise, which is the one case
+ * `holdOnly` exists to protect.
+ */
+export function migrate(w: Workspaces): Workspaces {
+  const fixIncome = (tradeable: boolean | undefined, type: string | undefined) =>
+    tradeable === false && classify(type ?? '') === 'fixedIncome';
+
+  const slot = (s: ExplorerState): ExplorerState => ({
+    ...s,
+    portfolio: {
+      ...s.portfolio,
+      stocks: s.portfolio.stocks.map((k) =>
+        fixIncome(k.tradeable, k.type) ? { ...k, tradeable: true, lotRounding: false } : k,
+      ),
+    },
+    /* The model set aside for the next account carries the same two flags, so it needs the same
+       treatment — otherwise closing an account and opening the next reinstates the old rule. */
+    ...(s.carried
+      ? {
+          carried: {
+            ...s.carried,
+            model: {
+              ...s.carried.model,
+              rows: s.carried.model.rows.map((r) =>
+                fixIncome(r.tradeable, r.type) ? { ...r, tradeable: true, lotRounding: false } : r,
+              ),
+            },
+          },
+        }
+      : {}),
+  });
+
+  return { example: slot(w.example), portfolio: slot(w.portfolio) };
+}
+
 /* Read once when this module first loads in a browser, before anything renders. Doing it here
    rather than in an effect keeps the restore out of React's render cycle entirely. */
 if (typeof window !== 'undefined') {
   try {
     const saved = store().getItem(STORAGE_KEY);
     const parsed: unknown = saved ? JSON.parse(saved) : null;
-    snapshot = restorable(parsed) ? parsed : fresh();
+    snapshot = restorable(parsed) ? migrate(parsed) : fresh();
   } catch {
     // A private window, a cleared store, or something that is not JSON at all.
     snapshot = fresh();

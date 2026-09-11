@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyState, sampleState } from './defaultState';
-import { restorable } from './workspaces';
+import { migrate, restorable, Workspaces } from './workspaces';
+import { Stock } from './types';
 
 /**
  * The check that stands between a stored workspace and the first render.
@@ -75,5 +76,82 @@ describe('restoring a saved workspace', () => {
     for (const value of [null, undefined, 0, '', 'null', [], true]) {
       expect(restorable(value)).toBe(false);
     }
+  });
+});
+
+/**
+ * Bringing a workspace saved under an older rule up to date.
+ *
+ * The case is real and was found on the CFP's own screen: his account was imported while fixed
+ * income was untradeable, those flags were written into the saved state, and the fix shipped to a
+ * build his loaded portfolio never passed through. A row said "held, not traded" no matter how
+ * many times he reloaded.
+ */
+describe('migrating a restored workspace', () => {
+  const bond = (over: Partial<Stock> = {}): Stock => ({
+    id: 'b',
+    sym: 'PPILX',
+    type: 'Fixed Income Sleeve',
+    price: 8.35,
+    target: 7.5,
+    bandMin: 5.5,
+    bandMax: 9.5,
+    shares: 7072.251,
+    tradeable: false,
+    lotRounding: false,
+    ...over,
+  });
+
+  const saved = (stocks: Stock[]): Workspaces => {
+    const w = { example: sampleState(), portfolio: emptyState() };
+    w.portfolio.portfolio.stocks = stocks;
+    return w;
+  };
+
+  it('makes a bond fund tradeable, and leaves it off the lot grid', () => {
+    const out = migrate(saved([bond()]));
+    expect(out.portfolio.portfolio.stocks[0]).toMatchObject({
+      tradeable: true,
+      lotRounding: false,
+    });
+  });
+
+  it('never promotes a class the tool does not recognise', () => {
+    // The one thing hold-only exists to protect: an unfamiliar sleeve stays untraded.
+    const odd = bond({ sym: 'WEIRD', type: 'Structured Product' });
+    expect(migrate(saved([odd])).portfolio.portfolio.stocks[0].tradeable).toBe(false);
+  });
+
+  it('leaves a stock alone, lot rule included', () => {
+    const eq = bond({ sym: 'AAPL', type: 'Stocks / ETFs Sleeve', tradeable: true, lotRounding: true });
+    expect(migrate(saved([eq])).portfolio.portfolio.stocks[0]).toMatchObject({
+      tradeable: true,
+      lotRounding: true,
+    });
+  });
+
+  it('migrates the model set aside for the next account too', () => {
+    const w = saved([]);
+    w.portfolio.carried = {
+      model: {
+        name: 'M',
+        rows: [
+          { sym: 'PPILX', type: 'Fixed Income Sleeve', target: 7.5, bandMin: 5.5, bandMax: 9.5, tradeable: false, lotRounding: false },
+        ],
+      },
+      prices: {},
+      from: 'the account just closed',
+    };
+
+    // Otherwise closing this account and opening the next puts the old rule straight back.
+    expect(migrate(w).portfolio.carried!.model.rows[0]).toMatchObject({
+      tradeable: true,
+      lotRounding: false,
+    });
+  });
+
+  it('changes nothing in a workspace already written under the new rule', () => {
+    const w = saved([bond({ tradeable: true })]);
+    expect(migrate(w).portfolio.portfolio.stocks[0].tradeable).toBe(true);
   });
 });
