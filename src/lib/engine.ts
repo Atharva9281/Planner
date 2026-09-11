@@ -233,6 +233,18 @@ export const lotRounds = (s: Stock) => s.lotRounding !== false;
 export const isTradeable = (s: Stock) => s.tradeable !== false;
 
 /**
+ * Rows the advisor works in percent of the account rather than in share counts.
+ *
+ * Bond funds, in practice: traded, but with no lot rule, because you buy $20,000 of one and take
+ * whatever share count the NAV gives you. The three lot columns have no answer for them and the
+ * row leads with dollars instead of shares.
+ *
+ * Derived rather than stored, so there is no fourth flag on `Stock` to keep in step with the other
+ * two: tradeable, and outside the lot grid, is exactly what a fund is.
+ */
+export const tradesByWeight = (s: Stock) => isTradeable(s) && !lotRounds(s);
+
+/**
  * The multiples of 100 the band will actually admit, tolerance allowed.
  *
  * Internal, and deliberately unsubstituted: this is what the target clamps against. The two
@@ -627,6 +639,20 @@ export interface WhatIf {
  */
 export function afterTrading(s: Stock, delta: number): number {
   return Math.max(0, s.shares + Math.trunc(delta));
+}
+
+/**
+ * The share count a given weight of the account comes to.
+ *
+ * The bridge for rows the advisor works in percent: he asks for 7% of the account and the engine
+ * still needs a holding to aim at. Whole shares, because the rounding is worth at most one share's
+ * price — about $8 on a bond fund — against a position of six figures, and because an ETF cannot
+ * be traded in fractions at most custodians anyway.
+ */
+export function sharesForWeight(p: Portfolio, s: Stock, percent: number): number {
+  const t = totalValue(p);
+  if (s.price <= 0 || t <= 0) return 0;
+  return Math.max(0, Math.round(((percent / 100) * t) / s.price));
 }
 
 /**

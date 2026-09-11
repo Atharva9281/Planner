@@ -16,6 +16,7 @@ import {
   rawMaxBuy,
   RawMaxBuy,
   totalValue,
+  tradesByWeight,
   weight,
 } from '@/lib/engine';
 import { money, pct as fmtPct, shares as fmtShares } from '@/lib/format';
@@ -82,17 +83,34 @@ function row(p: Portfolio, s: Stock) {
     sellToTarget: Math.max(s.shares - target.goal, 0),
     weight: weight(p, s),
     mandatory: mandatoryStatus(p, s),
+    /** Read this row in dollars, and offer no lot anything: a bond fund. */
+    byWeight: tradesByWeight(s),
   };
 }
 
-/** A share count over its dollar value, in the direction's colour. */
-function Move({ action, n, price }: { action: 'BUY' | 'SELL'; n: number; price: number }) {
+/**
+ * The move, leading with whichever unit the row is read in.
+ *
+ * A stock is bought in shares and the dollars are the consequence; a bond fund is bought in
+ * dollars and the share count is the consequence. Same two figures either way, swapped over.
+ */
+function Move({
+  action,
+  n,
+  price,
+  byWeight,
+}: {
+  action: 'BUY' | 'SELL';
+  n: number;
+  price: number;
+  byWeight?: boolean;
+}) {
   return (
     <div className="mt-1.5">
       <span className={`font-semibold ${action === 'BUY' ? 'text-buy' : 'text-sell'}`}>
-        {action} {fmtShares(n)} sh
+        {action} {byWeight ? money(n * price) : `${fmtShares(n)} sh`}
       </span>
-      <span className="sub">{money(n * price)}</span>
+      <span className="sub">{byWeight ? `${fmtShares(n)} sh` : money(n * price)}</span>
     </div>
   );
 }
@@ -117,6 +135,7 @@ function Destination({
   goLabel,
   affordable,
   cash,
+  byWeight,
 }: {
   shares: number | null;
   /**
@@ -143,6 +162,8 @@ function Destination({
   /** Whole shares the cash can pay for, so a buy that outruns it says so before it is pressed. */
   affordable?: number;
   cash?: number;
+  /** Read the cell in dollars rather than share counts: a bond fund is bought in money. */
+  byWeight?: boolean;
 }) {
   /*
    * The button is always drawn, and disabled when there is nothing to do.
@@ -187,16 +208,17 @@ function Destination({
             tone === 'buy' ? 'text-buy' : tone === 'sell' ? 'text-sell' : ''
           }`}
         >
-          {fmtShares(shares)} sh
+          {byWeight ? money(shares * price) : `${fmtShares(shares)} sh`}
         </span>{' '}
         {badge}
         <span className="sub">{fmtPct(pct)}</span>
+        {byWeight && <span className="sub">{fmtShares(shares)} sh</span>}
 
         {action === null ? (
           <span className="mt-2 block text-ink-soft">already here</span>
         ) : (
           <>
-            <Move action={action} n={Math.abs(delta)} price={price} />
+            <Move action={action} n={Math.abs(delta)} price={price} byWeight={byWeight} />
             {short && cash !== undefined && (
               <span className="sub text-warn">only {fmtShares(affordable!)} sh affordable now</span>
             )}
@@ -247,6 +269,7 @@ function SpendTheCash({
   affordable,
   maxShares,
   total,
+  byWeight,
   canTrade,
   onGo,
 }: {
@@ -255,6 +278,8 @@ function SpendTheCash({
   maxShares: number;
   /** Total account value, to say what weight the position would end at. */
   total: number;
+  /** Read the cell in dollars, as the rest of a bond fund's row is read. */
+  byWeight?: boolean;
   canTrade: boolean;
   onGo: () => void;
 }) {
@@ -267,10 +292,14 @@ function SpendTheCash({
   return (
     <div className="cell-inner">
       <div>
-        <span className="text-[15px] font-semibold">{fmtShares(affordable)} sh</span>
+        <span className="text-[15px] font-semibold">
+          {byWeight ? money(affordable * stock.price) : `${fmtShares(affordable)} sh`}
+        </span>
         {affordable > 0 && (
           <>
-            <span className="sub">Total {fmtShares(landing)} sh</span>
+            <span className="sub">
+              Total {byWeight ? money(landing * stock.price) : `${fmtShares(landing)} sh`}
+            </span>
             {/* Where that lands as a share of the account, rather than how far past the ceiling
                 it is in shares. The percentage is the language the whole page measures in, and it
                 answers the breach question by itself: red is the ceiling being passed. */}
@@ -309,6 +338,24 @@ function SpendTheCash({
 }
 
 const CAPTION = 'text-[11.5px] font-semibold uppercase tracking-[0.04em] text-ink-soft';
+
+/**
+ * A lot column on a row that has no lots.
+ *
+ * A bond fund is bought in dollars at whatever NAV, so there is no 100-share grid to sit on and
+ * nothing for these three columns to answer. A dash rather than an empty cell, which reads as
+ * missing data, and rather than a greyed button, which suggests an action that could exist.
+ */
+function NoLot({ sym }: { sym: string }) {
+  return (
+    <span
+      className="text-[15px] text-ink-faint"
+      title={`${sym} is bought in dollars, not in 100-share lots, so there is no lot to trade to.`}
+    >
+      &mdash;
+    </span>
+  );
+}
 
 /** One figure in the folded strip, carrying the column header it came from. */
 function StripFigure({
@@ -561,7 +608,9 @@ export default function LotAwareTable({
                   </td>
 
                   <td className="td py-2.5 align-middle whitespace-nowrap">
-                    {!canTrade ? (
+                    {r.byWeight ? (
+                      <NoLot sym={s.sym} />
+                    ) : !canTrade ? (
                       <span className="text-[12.5px] text-ink-soft">not traded here</span>
                     ) : (
                       <span className="font-semibold">{fmtShares(r.target.goal)} sh</span>
@@ -572,8 +621,8 @@ export default function LotAwareTable({
                     {fmtShares(r.minShares)} sh
                   </td>
                   <td className="td py-2.5 align-middle whitespace-nowrap">
-                    {r.lowerLot === null ? (
-                      <span className="text-[12.5px] text-ink-soft">no lot</span>
+                    {r.byWeight || r.lowerLot === null ? (
+                      <NoLot sym={s.sym} />
                     ) : (
                       `${fmtShares(r.lowerLot)} sh`
                     )}
@@ -582,8 +631,8 @@ export default function LotAwareTable({
                     {fmtShares(r.maxShares)} sh
                   </td>
                   <td className="td py-2.5 align-middle whitespace-nowrap">
-                    {r.upperLot === null ? (
-                      <span className="text-[12.5px] text-ink-soft">no lot</span>
+                    {r.byWeight || r.upperLot === null ? (
+                      <NoLot sym={s.sym} />
                     ) : (
                       `${fmtShares(r.upperLot)} sh`
                     )}
@@ -683,6 +732,7 @@ export default function LotAwareTable({
                     <Destination
                       shares={r.targetShares}
                       pct={r.pctOf(r.targetShares)}
+                      byWeight={r.byWeight}
                       price={s.price}
                       held={s.shares}
                       canTrade={canTrade}
@@ -695,7 +745,9 @@ export default function LotAwareTable({
 
                   {/* ---- 4. the lot-aware answer, and the one move that reaches it ---- */}
                   <td className="td cell-fill">
-                    {!canTrade ? (
+                    {r.byWeight ? (
+                      <NoLot sym={s.sym} />
+                    ) : !canTrade ? (
                       <div className="cell-inner">
                         <div>
                           <span className="text-[15px] font-semibold">
@@ -743,6 +795,7 @@ export default function LotAwareTable({
                     <Destination
                       shares={r.minShares}
                       pct={r.pctOf(r.minShares)}
+                      byWeight={r.byWeight}
                       price={s.price}
                       held={s.shares}
                       canTrade={canTrade}
@@ -756,6 +809,7 @@ export default function LotAwareTable({
 
                   {/* ---- 6. the lowest lot that still clears the floor ---- */}
                   <td className="td cell-fill">
+                    {r.byWeight ? <NoLot sym={s.sym} /> : (
                     <Destination
                       shares={r.lowerLot}
                       pct={r.pctOf(r.lowerLot ?? 0)}
@@ -779,6 +833,7 @@ export default function LotAwareTable({
                       onGo={() => onLot(s.id, 'low')}
                       goLabel="Trade to the lot nearest the floor"
                     />
+                    )}
                   </td>
 
                   {/* ---- 7. the raw ceiling, and buying up to it ---- */}
@@ -790,6 +845,7 @@ export default function LotAwareTable({
                     <Destination
                       shares={r.maxShares}
                       pct={r.pctOf(r.maxShares)}
+                      byWeight={r.byWeight}
                       price={s.price}
                       held={s.shares}
                       canTrade={canTrade}
@@ -803,6 +859,7 @@ export default function LotAwareTable({
 
                   {/* ---- 8. the highest lot that still clears the ceiling ---- */}
                   <td className="td cell-fill">
+                    {r.byWeight ? <NoLot sym={s.sym} /> : (
                     <Destination
                       shares={r.upperLot}
                       pct={r.pctOf(r.upperLot ?? 0)}
@@ -824,16 +881,20 @@ export default function LotAwareTable({
                       onGo={() => onLot(s.id, 'high')}
                       goLabel="Trade to the lot nearest the ceiling"
                     />
+                    )}
                   </td>
 
                   {/* ---- 9. what the idle cash could pay for ---- */}
                   <td className={`td cell-fill ${FOLD}`}>
+                    {/* The figure, but no button on a bond fund: the CFP wants those rows moved
+                        to a stated weight, never by tipping the whole cash balance into one. */}
                     <SpendTheCash
                       stock={s}
                       affordable={r.canAfford}
                       maxShares={r.maxShares}
                       total={total}
-                      canTrade={canTrade}
+                      byWeight={r.byWeight}
+                      canTrade={canTrade && !r.byWeight}
                       onGo={() => onTradeTo(s.id, s.shares + r.canAfford)}
                     />
                   </td>

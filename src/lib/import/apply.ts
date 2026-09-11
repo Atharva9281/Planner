@@ -39,11 +39,13 @@ export function applyImport(parsed: ParsedImport, resolution: Resolution): Explo
     bandMin: row.bandMin,
     bandMax: row.bandMax,
     shares: sharesOf.get(row.sym) ?? 0,
-    /* The model's own Type decides both of these, so nothing is asked at import time: fixed
-       income is held rather than traded, and a lot means nothing to something bought in dollars.
+    /* The model's own Type decides both of these, so nothing is asked at import time.
+       They are deliberately not the same question. Fixed income *is* traded — the model gives it
+       a target and a band like anything else — but it is bought in dollars at whatever NAV, so
+       the 100-share grid has no meaning for it. Only an unrecognised asset class is left untraded.
        A model carried over from the previous account brings both flags already settled, and those
        win — see the note on `ModelRow.tradeable`. */
-    tradeable: row.tradeable ?? classify(row.type ?? '') === 'tradeable',
+    tradeable: row.tradeable ?? classify(row.type ?? '') !== 'holdOnly',
     lotRounding: row.lotRounding ?? classify(row.type ?? '') === 'tradeable',
   }));
 

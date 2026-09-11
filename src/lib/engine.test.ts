@@ -14,6 +14,11 @@ import {
   planToLot,
   planToTarget,
   rawMaxBuy,
+  sharesForWeight,
+  tradesByWeight,
+  isTradeable,
+  lotRounds,
+  destinationShares,
   rawMinSell,
   planToShares,
   totalValue,
@@ -976,5 +981,116 @@ describe('rounding the target up to a lot', () => {
 
     expect(lowestLotWithinBand(p, s).isLot).toBe(false);
     expect(lotAwareTarget(p, s)).toMatchObject({ goal: 23, isLot: false });
+  });
+});
+
+/**
+ * Bond funds: traded, but in percent of the account rather than in share counts.
+ *
+ * Built from the CFP's own fixed income sleeve — PPILX at $8.35, FLUD at $24.94, SHYL at $43.92,
+ * each on a 7.5% target with a 5.5–9.5% band, in a $1,612,841 account. All three sit under their
+ * floor while 30% of the account is idle cash, which is the case the whole feature exists for.
+ */
+describe('a position traded by weight', () => {
+  const TOTAL = 1_612_841;
+  const CASH = 485_237;
+  const fund = (sym: string, price: number, shares: number) => {
+    const stocks: Stock[] = [
+      {
+        id: 'a',
+        sym,
+        type: 'Fixed Income Sleeve',
+        price,
+        target: 7.5,
+        bandMin: 5.5,
+        bandMax: 9.5,
+        shares,
+        tradeable: true,
+        lotRounding: false,
+      },
+      { id: 'f', sym: 'FILL', price: 1, target: 90, bandMin: 80, bandMax: 99, shares: 0 },
+    ];
+    /* The real idle balance, because a buy is clamped to what the cash covers — an account with
+       none would return no plan at all and prove nothing about the destination chosen. */
+    stocks[1].shares = Math.round(TOTAL - CASH - shares * price);
+    return build(stocks, CASH);
+  };
+
+  it('is traded, and off the lot grid', () => {
+    const s = stockOf(fund('PPILX', 8.35, 7072), 'PPILX');
+    expect(isTradeable(s)).toBe(true);
+    expect(lotRounds(s)).toBe(false);
+    expect(tradesByWeight(s)).toBe(true);
+  });
+
+  it('offers no lot on any side, however the band falls', () => {
+    const p = fund('PPILX', 8.35, 7072);
+    const s = stockOf(p, 'PPILX');
+
+    // Every lot planner refuses outright, so the three lot columns have nothing to draw.
+    expect(planToLot(p, s, 'low')).toBeNull();
+    expect(planToLot(p, s, 'high')).toBeNull();
+    expect(destinationShares(p, s, 'lot-low')).toBeNull();
+    expect(destinationShares(p, s, 'lot-high')).toBeNull();
+    // …and the target is the raw weight, never rounded to a hundred.
+    expect(lotAwareTarget(p, s)).toMatchObject({ isLot: false });
+  });
+
+  it('aims the target at the weight the model asks for', () => {
+    const p = fund('PPILX', 8.35, 7072);
+    const s = stockOf(p, 'PPILX');
+
+    // 7.5% of $1,612,841 is $120,963, which at $8.35 is 14,487 shares.
+    const goal = lotAwareTarget(p, s).goal;
+    expect(goal).toBe(14487);
+    expect((goal * s.price) / TOTAL * 100).toBeCloseTo(7.5, 2);
+  });
+
+  it('still trades to the band edges, which are ordinary percentages', () => {
+    const p = fund('SHYL', 43.92, 1899);
+    const s = stockOf(p, 'SHYL');
+
+    // 5.5% and 9.5% of the account, in whole shares just inside each edge.
+    expect(bandShareLimits(p, s)).toMatchObject({ minShares: 2020, maxShares: 3488 });
+    expect(planToBandEdge(p, s, 'low')).toMatchObject({ action: 'BUY', goalShares: 2020 });
+    expect(planToBandEdge(p, s, 'high')).toMatchObject({ action: 'BUY', goalShares: 3488 });
+  });
+
+  it('converts a weight the advisor types into a holding', () => {
+    const p = fund('PPILX', 8.35, 7072);
+    const s = stockOf(p, 'PPILX');
+
+    // The box takes a destination, so 7 means "hold 7% of the account in this".
+    const want = sharesForWeight(p, s, 7);
+    expect(want).toBe(Math.round((0.07 * TOTAL) / 8.35));
+    expect((want * s.price) / TOTAL * 100).toBeCloseTo(7, 2);
+
+    // Below where it sits, that is a sale — no minus sign needed to say so.
+    const under = whatIf(p, s, sharesForWeight(p, s, 2));
+    expect(under.action).toBe('SELL');
+  });
+
+  it('reports the three real funds as needing a decision, being under their floor', () => {
+    for (const [sym, price, shares] of [
+      ['PPILX', 8.35, 7072],
+      ['FLUD', 24.94, 3072],
+      ['SHYL', 43.92, 1899],
+    ] as const) {
+      const p = fund(sym, price, shares);
+      const s = stockOf(p, sym);
+      expect(weight(p, s)).toBeLessThan(5.5);
+      expect(mandatoryStatus(p, s)).toBe('under');
+      expect(needsDecision(p, s)).toBe(true);
+    }
+  });
+
+  it('leaves an unrecognised asset class untraded, as it always was', () => {
+    const p = build(
+      [{ id: 'a', sym: 'WEIRD', price: 10, target: 5, bandMin: 3, bandMax: 7, shares: 100, tradeable: false }],
+      1000,
+    );
+    const s = stockOf(p, 'WEIRD');
+    expect(tradesByWeight(s)).toBe(false);
+    expect(planToTarget(p, s)).toBeNull();
   });
 });

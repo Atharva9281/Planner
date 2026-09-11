@@ -197,13 +197,16 @@ describe('the holdings export', () => {
     expect(parsed.warnings.some((w) => w.includes('2 option rows ignored'))).toBe(true);
   });
 
-  it('marks fixed income as held rather than tradeable', () => {
+  it('marks fixed income tradeable, like every class it recognises', () => {
     const holdings = parseSheets([holdingsSheet()]).holdings!;
     const bySym = Object.fromEntries(holdings.positions.map((p) => [p.sym, p]));
 
     expect(bySym.AMAT.tradeable).toBe(true); // Stocks / ETFs Sleeve
     expect(bySym.QQQ.tradeable).toBe(true); // Index
-    expect(bySym.FLUD.tradeable).toBe(false); // Fixed Income Sleeve
+    /* A bond fund the model asks for has a target and a band like anything else, so it is traded.
+       What differs is the unit — percent of the account, not share counts — which `lotRounding`
+       carries, not this flag. */
+    expect(bySym.FLUD.tradeable).toBe(true); // Fixed Income Sleeve
   });
 
   it('treats the deposit account as cash, not as a position', () => {
@@ -346,10 +349,14 @@ describe('applying the import', () => {
     expect(p.offModel.some((h) => h.sym === 'OPTIONS')).toBe(false);
   });
 
-  it('holds fixed income inside the model, and sells it outside', () => {
+  it('trades fixed income inside the model by weight, and sells it outside', () => {
     const p = applyImport(parsed(), baseResolution()).portfolio;
 
-    expect(p.stocks.find((s) => s.sym === 'MGSMX')!.tradeable).toBe(false);
+    /* Traded, but off the 100-share grid: a bond fund is bought in dollars at whatever NAV. The
+       two flags together are what the table reads to put the row in percent. */
+    const bond = p.stocks.find((s) => s.sym === 'MGSMX')!;
+    expect(bond.tradeable).toBe(true);
+    expect(bond.lotRounding).toBe(false);
     expect(p.stocks.find((s) => s.sym === 'AAPL')!.tradeable).toBe(true);
     // FLUD is Fixed Income Sleeve in the holdings but has no model row.
     /* FLUD is a bond fund the model has no row for. Outside the model there is no target and no
@@ -552,7 +559,7 @@ describe('one model, several accounts', () => {
     const next = applyImport(carriedAsImport(carried), baseResolution());
 
     const bond = next.portfolio.stocks.find((s) => s.sym === 'MGSMX')!;
-    expect(bond.tradeable).toBe(false);
+    expect(bond.tradeable).toBe(true);
     expect(bond.lotRounding).toBe(false);
     expect(next.portfolio.stocks.find((s) => s.sym === 'QQQ')!.tradeable).toBe(true);
   });

@@ -147,15 +147,21 @@ const HOLDING_FIELDS = {
  * What the Asset Class column says a row is. Everything downstream follows from this one call:
  * the cash balance, which rows become positions, and which of those may be traded.
  *
- *   cash      the account's spendable balance, taken from its Quantity
- *   tradeable stocks, ETFs and index funds — the only rows a trade is ever offered on
- *   holdOnly  fixed income, and anything unrecognised: counted and shown, never traded
- *   option    dropped entirely; not a position, not a holding, not part of account value
+ *   cash        the account's spendable balance, taken from its Quantity
+ *   tradeable   stocks, ETFs and index funds — traded in share counts, on the 100-share grid
+ *   fixedIncome bond funds — traded too, but in percent of the account rather than in shares
+ *   holdOnly    anything unrecognised: counted and shown, never traded
+ *   option      dropped entirely; not a position, not a holding, not part of account value
  *
- * An unfamiliar asset class lands in `holdOnly` on purpose. Showing an unknown row without trade
- * buttons is recoverable; offering to trade something the model never classified is not.
+ * Fixed income is its own kind rather than a flavour of `holdOnly`, which is where it used to sit.
+ * The model gives these rows a target and a band exactly as it does a stock, so there was never a
+ * reason not to trade them — only a reason not to trade them *the same way*. A bond fund at $8.35
+ * a share is bought in dollars, and a 100-share lot of it means nothing.
+ *
+ * An unfamiliar asset class still lands in `holdOnly` on purpose. Showing an unknown row without
+ * trade buttons is recoverable; offering to trade something the model never classified is not.
  */
-export type RowKind = 'cash' | 'tradeable' | 'holdOnly' | 'option';
+export type RowKind = 'cash' | 'tradeable' | 'fixedIncome' | 'holdOnly' | 'option';
 
 export function classify(assetClass: string): RowKind {
   const a = assetClass.trim().toLowerCase();
@@ -163,6 +169,7 @@ export function classify(assetClass: string): RowKind {
   if (/^cash/.test(a)) return 'cash';
   if (/stock|etf/.test(a)) return 'tradeable';
   if (/^index/.test(a)) return 'tradeable';
+  if (/fixed income|bond/.test(a)) return 'fixedIncome';
   return 'holdOnly';
 }
 
@@ -236,7 +243,8 @@ function readHoldingsSheet(sheet: SheetGrid, warnings: string[]): ParsedHoldings
     }
     if (shares === 0) continue;
 
-    if (kind === 'holdOnly' && !/fixed income/i.test(assetClass)) unknownClasses.add(assetClass);
+    // Fixed income is recognised now, so only genuinely unknown classes are worth a warning.
+    if (kind === 'holdOnly') unknownClasses.add(assetClass);
 
     positions.push({
       sym,
@@ -244,7 +252,7 @@ function readHoldingsSheet(sheet: SheetGrid, warnings: string[]): ParsedHoldings
       assetClass: assetClass || undefined,
       shares,
       price,
-      tradeable: kind === 'tradeable',
+      tradeable: kind === 'tradeable' || kind === 'fixedIncome',
     });
   }
 
