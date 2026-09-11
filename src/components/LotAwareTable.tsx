@@ -18,7 +18,7 @@ import {
   totalValue,
   weight,
 } from '@/lib/engine';
-import { money, pct, shares as fmtShares } from '@/lib/format';
+import { money, pct as fmtPct, shares as fmtShares } from '@/lib/format';
 import { LotEdge, Portfolio, Stock } from '@/lib/types';
 import { RowCollapse } from '@/lib/useRowCollapse';
 
@@ -65,12 +65,18 @@ function row(p: Portfolio, s: Stock) {
     upperLot: lots ? high.highestLot : null,
     upperIsLot: high.isLot,
     lots,
-    /** What the lot-aware goal comes to as a share of the account — stated only where the lot
-     *  sits outside the band and needs to account for itself. */
-    goalPct: (() => {
+    /**
+     * What any share count on this row comes to as a percentage of the account.
+     *
+     * One converter for the whole row, because every column between the ticker and the box is a
+     * share count the position could end at, and each one now states the weight it lands on. A
+     * trade swaps cash for shares without moving the account total, so the denominator is the
+     * same for all of them.
+     */
+    pctOf: (n: number) => {
       const t = totalValue(p);
-      return t > 0 ? ((target.goal * s.price) / t) * 100 : 0;
-    })(),
+      return t > 0 ? ((n * s.price) / t) * 100 : 0;
+    },
     canAfford: affordableShares(p, s),
     buyToTarget: Math.max(target.goal - s.shares, 0),
     sellToTarget: Math.max(s.shares - target.goal, 0),
@@ -101,7 +107,7 @@ function Move({ action, n, price }: { action: 'BUY' | 'SELL'; n: number; price: 
  */
 function Destination({
   shares,
-  caption,
+  pct,
   price,
   held,
   canTrade,
@@ -114,14 +120,19 @@ function Destination({
 }: {
   shares: number | null;
   /**
-   * What the figure is, where the column header does not already say it.
+   * What that share count comes to as a percentage of the account.
    *
-   * Optional, and left off most columns on purpose. "Lot closest to lower band" over a cell
-   * reading "200 sh · lot above the 2% floor" says the same thing twice, and eight columns each
-   * saying it twice is what made a row take a paragraph to read. The band edges keep a bare
-   * percentage, because the header names the edge but not where it sits.
+   * On every destination column, not a chosen few. Each one names a holding the position could
+   * end at, and the only question a band mandate asks of a holding is what weight it carries —
+   * so reading down a row should answer "which of these land inside 2-6%" without arithmetic.
+   * Four of the columns used to leave it out, and two of the others printed the *nominal* band
+   * edge instead, which is a different number: a 2% floor comes to 103 whole shares, and 103
+   * shares are 2.020%.
+   *
+   * Costs no height. The widest cells already ran to four lines, and the row is as tall as its
+   * tallest cell either way.
    */
-  caption?: string;
+  pct: number;
   price: number;
   held: number;
   canTrade: boolean;
@@ -145,8 +156,7 @@ function Destination({
     return (
       <div className="cell-inner">
         <div>
-          {caption && <span className="sub !mt-0">{caption}</span>}
-          <span className="badge mt-2 bg-warn-soft text-warn">no lot here</span>
+          <span className="badge bg-warn-soft text-warn">no lot here</span>
         </div>
         {canTrade && onGo && (
           <div className="cell-action">
@@ -180,7 +190,7 @@ function Destination({
           {fmtShares(shares)} sh
         </span>{' '}
         {badge}
-        {caption && <span className="sub">{caption}</span>}
+        <span className="sub">{fmtPct(pct)}</span>
 
         {action === null ? (
           <span className="mt-2 block text-ink-soft">already here</span>
@@ -265,7 +275,7 @@ function SpendTheCash({
                 it is in shares. The percentage is the language the whole page measures in, and it
                 answers the breach question by itself: red is the ceiling being passed. */}
             <span className={`sub ${breaches ? 'font-semibold text-danger' : ''}`}>
-              {pct(landingPct)}
+              {fmtPct(landingPct)}
             </span>
           </>
         )}
@@ -326,6 +336,7 @@ function BandStrip({
   maxShares,
   rawBuy,
   total,
+  pctOf,
   canTrade,
   onEdge,
   onSpend,
@@ -336,6 +347,8 @@ function BandStrip({
   rawBuy: RawMaxBuy;
   /** Total account value, to say what weight spending the cash would end at. */
   total: number;
+  /** The row's own share-count-to-percentage converter, so the strip agrees with the columns. */
+  pctOf: (n: number) => number;
   canTrade: boolean;
   onEdge: (stockId: string, edge: LotEdge) => void;
   /** Buys every share the cash affords, band or no band. */
@@ -371,7 +384,9 @@ function BandStrip({
           }
         >
           <span className="text-[15px] font-semibold text-sell">{fmtShares(minShares)} sh</span>
-          <span className="font-mono text-[12px] text-ink-soft">{stock.bandMin}%</span>
+          {/* The weight those whole shares carry, as every column above states it — not the
+              nominal band edge, which the ticker column already gives. */}
+          <span className="font-mono text-[12px] text-ink-soft">{fmtPct(pctOf(minShares))}</span>
         </StripFigure>
 
         <StripFigure
@@ -389,7 +404,7 @@ function BandStrip({
           }
         >
           <span className="text-[15px] font-semibold text-buy">{fmtShares(maxShares)} sh</span>
-          <span className="font-mono text-[12px] text-ink-soft">{stock.bandMax}%</span>
+          <span className="font-mono text-[12px] text-ink-soft">{fmtPct(pctOf(maxShares))}</span>
         </StripFigure>
 
         {/* The folded column keeps its button, or folding would quietly remove a control rather
@@ -415,7 +430,7 @@ function BandStrip({
               landing > maxShares ? 'font-semibold text-danger' : 'text-ink-soft'
             }`}
           >
-            {pct(landingPct)}
+            {fmtPct(landingPct)}
           </span>
         </StripFigure>
       </div>
@@ -644,7 +659,7 @@ export default function LotAwareTable({
                     {/* Where it sits, and nothing about where it may sit — the band is stated in
                         full one column to the left. */}
                     <span className={`sub ${r.mandatory ? 'font-semibold text-danger' : ''}`}>
-                      {pct(r.weight)}
+                      {fmtPct(r.weight)}
                     </span>
                     <span className="sub">{money(s.shares * s.price)}</span>
                     {/* Just the direction. "MANDATORY, over band" set the width of this column on
@@ -667,6 +682,7 @@ export default function LotAwareTable({
                   <td className="td cell-fill">
                     <Destination
                       shares={r.targetShares}
+                      pct={r.pctOf(r.targetShares)}
                       price={s.price}
                       held={s.shares}
                       canTrade={canTrade}
@@ -693,11 +709,7 @@ export default function LotAwareTable({
                     ) : (
                       <Destination
                         shares={r.target.goal}
-                        /* A lot that is not simply the nearest one says where it lands. On a $316
-                           stock one lot is about a point of the account, so being pushed a rung up
-                           to reach the band can sit a long way from the target — and that should
-                           not be discovered after the trade. Silent on every ordinary row. */
-                        caption={r.target.pushed ? pct(r.goalPct) : undefined}
+                        pct={r.pctOf(r.target.goal)}
                         badge={
                           <span
                             className={`badge ${
@@ -705,7 +717,7 @@ export default function LotAwareTable({
                             }`}
                             title={
                               r.target.pushed
-                                ? `The nearest lot to the ${s.target}% target does not fit the ${s.bandMin}–${s.bandMax}% band, so this is the nearest one that does. It lands at ${pct(r.goalPct)}.`
+                                ? `The nearest lot to the ${s.target}% target does not fit the ${s.bandMin}–${s.bandMax}% band, so this is the nearest one that does. It lands at ${fmtPct(r.pctOf(r.target.goal))}.`
                                 : undefined
                             }
                           >
@@ -725,9 +737,12 @@ export default function LotAwareTable({
 
                   {/* ---- 5. the raw floor, and selling down to it ---- */}
                   <td className={`td cell-fill ${FOLD}`}>
+                    {/* The weight 103 whole shares actually carry, not the 2% the band asks for.
+                        The mandate is stated once in the ticker column; this column says where its
+                        floor lands after rounding to a share you can trade. */}
                     <Destination
                       shares={r.minShares}
-                      caption={`${s.bandMin}%`}
+                      pct={r.pctOf(r.minShares)}
                       price={s.price}
                       held={s.shares}
                       canTrade={canTrade}
@@ -743,6 +758,7 @@ export default function LotAwareTable({
                   <td className="td cell-fill">
                     <Destination
                       shares={r.lowerLot}
+                      pct={r.pctOf(r.lowerLot ?? 0)}
                       /* Where no lot serves this side, the figure is the floor itself. Badged, or
                          a plain share count sits under a heading promising a lot. */
                       badge={
@@ -773,7 +789,7 @@ export default function LotAwareTable({
                         not the number printed here. */}
                     <Destination
                       shares={r.maxShares}
-                      caption={`${s.bandMax}%`}
+                      pct={r.pctOf(r.maxShares)}
                       price={s.price}
                       held={s.shares}
                       canTrade={canTrade}
@@ -789,6 +805,7 @@ export default function LotAwareTable({
                   <td className="td cell-fill">
                     <Destination
                       shares={r.upperLot}
+                      pct={r.pctOf(r.upperLot ?? 0)}
                       badge={
                         r.upperIsLot ? undefined : (
                           <span
@@ -851,6 +868,7 @@ export default function LotAwareTable({
                       maxShares={r.maxShares}
                       rawBuy={rawBuy}
                       total={total}
+                      pctOf={r.pctOf}
                       canTrade={canTrade}
                       onEdge={onEdge}
                       onSpend={() => onTradeTo(s.id, s.shares + r.canAfford)}
