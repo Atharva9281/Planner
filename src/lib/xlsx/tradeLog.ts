@@ -42,9 +42,18 @@ const money = (value: number): Cell => ({ value, format: 'money' });
 const percent = (value: number): Cell => ({ value, format: 'percent' });
 const blank = (): Cell => text('');
 
+/**
+ * Where the position lands, not how many shares move to get it there.
+ *
+ * These read `resultingShares` rather than `shares`, which is the fix for a note that was
+ * answering a different question from the one this tool exists to ask. Buying 73 shares of AAPL
+ * to reach 200 was reported as "Not a round lot" — 73 is not a multiple of 100 — while the Total
+ * column beside it read 200. The whole premise is landing the *holding* on a lot; the size of the
+ * order that gets there is incidental.
+ */
 function noteFor(o: Order): string {
   if (o.source === 'offModel') return 'Not in the model. Sold entire, proceeds to cash.';
-  return o.shares % 100 === 0 ? 'A clean lot.' : 'Not a round lot.';
+  return o.resultingShares % 100 === 0 ? 'Lands on a round lot.' : 'Lands off-lot.';
 }
 
 export function ordersSheet(

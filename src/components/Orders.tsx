@@ -95,9 +95,11 @@ export default function Orders({ state }: { state: ExplorerState }) {
                 <td className="td text-[13px] whitespace-normal text-ink-soft">
                   {o.source === 'offModel'
                     ? 'Not in the model. Sold entire, proceeds to cash.'
-                    : o.shares % 100 === 0
-                      ? 'A clean lot.'
-                      : 'Not a round lot.'}
+                    : /* The landing, not the order size — the same figure the Total column shows.
+                         Read off `shares`, a buy of 73 to reach 200 reported "Not a round lot". */
+                      o.resultingShares % 100 === 0
+                      ? 'Lands on a round lot.'
+                      : 'Lands off-lot.'}
                 </td>
               </tr>
             ))}
