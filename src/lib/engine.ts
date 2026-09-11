@@ -245,6 +245,42 @@ export const isTradeable = (s: Stock) => s.tradeable !== false;
 export const tradesByWeight = (s: Stock) => isTradeable(s) && !lotRounds(s);
 
 /**
+ * Which block a position sits in when the table is put in order.
+ *
+ *   0  ordinary holdings, read in share counts on the 100-share grid
+ *   1  traded by weight — bond funds, read in dollars with three empty lot columns
+ *   2  not traded here at all, an asset class the tool does not recognise
+ *
+ * The blocks exist because a fund's row does not just hold different numbers, it is read in a
+ * different unit. Sorted strictly by ticker, this account's four bond funds land at positions 7,
+ * 16, 18 and 20, so the eye changes format five times going down the table. Kept together it
+ * changes once.
+ */
+const displayRank = (s: Stock): number => (!isTradeable(s) ? 2 : tradesByWeight(s) ? 1 : 0);
+
+/**
+ * The order every table on the page lists positions in: by ticker, with the blocks above kept
+ * whole. A model export arrives in whatever order it was written, which on this account means
+ * finding MCK involves reading all twenty-three rows.
+ *
+ * Compared with plain `<` rather than `localeCompare`, because this runs on the server and again
+ * in the browser and the two need not agree on a collation — the same reason every figure on the
+ * page is formatted against a pinned locale. Tickers are ASCII, so the plain comparison is the
+ * one that cannot drift.
+ *
+ * Two rows may legitimately share a symbol; `sort` is stable, so they keep the order the model
+ * gave them.
+ */
+export function byTicker(a: Stock, b: Stock): number {
+  const block = displayRank(a) - displayRank(b);
+  if (block !== 0) return block;
+  return a.sym < b.sym ? -1 : a.sym > b.sym ? 1 : 0;
+}
+
+/** The positions in display order, without disturbing the portfolio's own array. */
+export const inDisplayOrder = (stocks: Stock[]): Stock[] => [...stocks].sort(byTicker);
+
+/**
  * The multiples of 100 the band will actually admit, tolerance allowed.
  *
  * Internal, and deliberately unsubstituted: this is what the target clamps against. The two

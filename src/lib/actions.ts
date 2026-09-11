@@ -4,7 +4,14 @@
  * history that has to be maintained by hand.
  */
 
-import { cashPct, destinationShares, offModelValue, planToLot, planToTarget } from './engine';
+import {
+  cashPct,
+  destinationShares,
+  inDisplayOrder,
+  offModelValue,
+  planToLot,
+  planToTarget,
+} from './engine';
 import { baselineFrom, emptyState, sampleState } from './defaultState';
 import { carryModel } from './import/carry';
 import {
@@ -244,8 +251,12 @@ export function tradeAll(
       : planToLot(p, s, destination === 'lot-high' ? 'high' : 'low', { clampToCash: false });
 
   /* Destinations are read once, off the portfolio as it stands. They do not move as trades land,
-     so re-reading them mid-run would answer the same thing more slowly. */
-  const rows = state.portfolio.stocks.map((s) => ({
+     so re-reading them mid-run would answer the same thing more slowly.
+
+     Display order, so the steps this press writes read down the log in the order the table reads
+     down the page. Nothing about the outcome depends on it — no row's destination moves as another
+     row trades — which is exactly why it is free to make the two agree. */
+  const rows = inDisplayOrder(state.portfolio.stocks).map((s) => ({
     stock: s,
     goal: destinationShares(state.portfolio, s, destination),
   }));

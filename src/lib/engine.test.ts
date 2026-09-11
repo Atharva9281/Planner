@@ -19,6 +19,7 @@ import {
   isTradeable,
   lotRounds,
   destinationShares,
+  inDisplayOrder,
   rawMinSell,
   planToShares,
   totalValue,
@@ -1092,5 +1093,68 @@ describe('a position traded by weight', () => {
     const s = stockOf(p, 'WEIRD');
     expect(tradesByWeight(s)).toBe(false);
     expect(planToTarget(p, s)).toBeNull();
+  });
+});
+
+/**
+ * The order the tables list positions in.
+ *
+ * Built from the CFP's own model, which arrives in no order at all — finding MCK in it means
+ * reading all twenty-three rows.
+ */
+describe('display order', () => {
+  const at = (sym: string, weightTraded = false, traded = true): Stock => ({
+    id: `x${sym}`,
+    sym,
+    price: 10,
+    target: 2.5,
+    bandMin: 2,
+    bandMax: 5,
+    shares: 100,
+    tradeable: traded,
+    lotRounding: !weightTraded,
+  });
+
+  /** His model export, in the order the file writes it. */
+  const HIS = ['AAPL','AMZN','CSX','DELL','GOOGL','SNDK','XOM','CVS','MCK','JNJ','JPM','GE','MU','AMAT','WELL','QQQ','PANW','HWM','PPILX','FLUD','SHYL','SCFZX','SHOP'];
+  const FUNDS = new Set(['PPILX', 'FLUD', 'SHYL', 'SCFZX']);
+
+  it('puts his account in one readable order, bond funds last', () => {
+    const sorted = inDisplayOrder(HIS.map((s) => at(s, FUNDS.has(s)))).map((s) => s.sym);
+
+    expect(sorted).toEqual([
+      'AAPL','AMAT','AMZN','CSX','CVS','DELL','GE','GOOGL','HWM','JNJ','JPM','MCK','MU','PANW','QQQ','SHOP','SNDK','WELL','XOM',
+      'FLUD','PPILX','SCFZX','SHYL',
+    ]);
+  });
+
+  it('keeps the funds together rather than scattering them through the stocks', () => {
+    const sorted = inDisplayOrder(HIS.map((s) => at(s, FUNDS.has(s)))).map((s) => s.sym);
+    const positions = [...FUNDS].map((f) => sorted.indexOf(f)).sort((a, b) => a - b);
+
+    // Contiguous, and at the end — one change of unit going down the table rather than five.
+    expect(positions).toEqual([19, 20, 21, 22]);
+  });
+
+  it('sorts each block by ticker on its own', () => {
+    const sorted = inDisplayOrder([at('ZZZ'), at('AAA'), at('MMM')]).map((s) => s.sym);
+    expect(sorted).toEqual(['AAA', 'MMM', 'ZZZ']);
+  });
+
+  it('puts a class the tool does not trade below even the funds', () => {
+    const sorted = inDisplayOrder([
+      at('AAA', false, false), // unrecognised: not traded at all
+      at('ZZZ'), // ordinary stock
+      at('MMM', true), // bond fund
+    ]).map((s) => s.sym);
+
+    expect(sorted).toEqual(['ZZZ', 'MMM', 'AAA']);
+  });
+
+  it('leaves the portfolio own array where it was', () => {
+    const stocks = [at('ZZZ'), at('AAA')];
+    inDisplayOrder(stocks);
+    // Display only: the engine, the baseline and the log all key off ids and order never moves.
+    expect(stocks.map((s) => s.sym)).toEqual(['ZZZ', 'AAA']);
   });
 });

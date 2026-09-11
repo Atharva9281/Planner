@@ -7,6 +7,7 @@ import {
   affordableShares,
   bandShareLimits,
   highestLotWithinBand,
+  inDisplayOrder,
   lotAwareTarget,
   lotRounds,
   isTradeable,
@@ -509,12 +510,16 @@ export default function LotAwareTable({
      denominator is the same for every row being drawn in this pass. */
   const total = totalValue(portfolio);
 
+  /* By ticker, with the bond funds kept together at the foot. Display only — the portfolio's own
+     array is untouched, and every id the row state and the engine key off is unchanged. */
+  const positions = inDisplayOrder(portfolio.stocks);
+
   return (
     <div className="table-stick">
       <table className="w-full border-collapse">
         <PositionsHead />
         <tbody>
-          {portfolio.stocks.map((s, i) => {
+          {positions.map((s, i) => {
             const stripe = i % 2 ? 'bg-panel-alt' : 'bg-panel';
 
             /* Without a price there is no weight, no band in shares and no trade. Saying so

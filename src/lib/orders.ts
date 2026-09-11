@@ -1,3 +1,4 @@
+import { inDisplayOrder } from './engine';
 import { ExplorerState, OffModelHolding, TradeAction } from './types';
 
 /**
@@ -54,7 +55,9 @@ export interface OrderSummary {
 export function netOrders(state: ExplorerState): Order[] {
   const orders: Order[] = [];
 
-  for (const stock of state.portfolio.stocks) {
+  /* The same order the table upstairs lists them in. Two tables on one page disagreeing about
+     where a position sits is a small thing that costs a real search every time. */
+  for (const stock of inDisplayOrder(state.portfolio.stocks)) {
     const opening = state.baseline.shares[stock.id] ?? 0;
     const delta = stock.shares - opening;
     if (delta === 0) continue;

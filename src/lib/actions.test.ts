@@ -22,6 +22,7 @@ import {
 } from './actions';
 import { samplePortfolio, sampleState } from './defaultState';
 import {
+  inDisplayOrder,
   destinationShares,
   planToBandEdge,
   planToLot,
@@ -468,12 +469,15 @@ describe('taking every position to one destination', () => {
     for (const s of state.portfolio.stocks) {
       expect(s.shares).toBe(destinationShares(start.portfolio, s, 'target'));
     }
-    // Trades come in table order now, not sells-first.
+    /* Trades come in table order, not sells-first — and the table is sorted by ticker now, so the
+       log reads down the page the way the table does. Built from the same sort rather than a
+       written-out list, so it stays true if the model's own order changes. */
     expect(state.log.map((e) => e.sym)).toEqual(
-      start.portfolio.stocks
+      inDisplayOrder(start.portfolio.stocks)
         .filter((s) => destinationShares(start.portfolio, s, 'target') !== s.shares)
         .map((s) => s.sym),
     );
+    expect(state.log.map((e) => e.sym)).toEqual(['AAPL', 'AMZN', 'MSFT', 'MU', 'NVDA']);
     expect(outcome.traded).toBe(state.log.length);
   });
 
