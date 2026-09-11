@@ -898,19 +898,22 @@ describe('a band with no lot in it', () => {
 
     expect(lowestLotWithinBand(p, s)).toMatchObject({ lowestLot: 700, isLot: true });
     expect(highestLotWithinBand(p, s)).toMatchObject({ highestLot: 1600, isLot: true });
-    // …and the target keeps the nearest lot, rather than being pushed up a rung.
-    expect(lotAwareTarget(p, s)).toMatchObject({ goal: 800, isLot: true, pushed: false });
+    /* The target rounds up: 823 shares go to 900, not back to the nearer 800. This is the row the
+       rule is clearest on, because it is the only one here whose target rounds *down* to its
+       nearest lot — so it is where "nearest" and "higher" actually disagree. */
+    expect(lotAwareTarget(p, s)).toMatchObject({ goal: 900, isLot: true });
   });
 });
 
 /**
- * The higher lot first, where the nearer one is already the floor column's answer.
+ * The higher lot, always.
  *
- * The CFP's rule, and the three rows he settled it on. It is a test, not a preference for buying:
- * a column showing the same share count as the column beside it is a column doing no work. CSX is
- * the row that proves it is not a blanket round-up.
+ * The CFP's rule and the rows he settled it on. Round the target up to the next hundred and take
+ * that lot where the band allows it — never back down to the nearer one. The account holds 30%
+ * cash against an 8% ceiling, so of the two lots straddling a target, the one that puts more money
+ * to work is the one he wants.
  */
-describe('stepping the target lot up a rung', () => {
+describe('rounding the target up to a lot', () => {
   const TOTAL = 1_612_801.75;
   const at = (sym: string, price: number, shares: number, bandMin: number, bandMax: number) => {
     const stocks: Stock[] = [
@@ -921,7 +924,7 @@ describe('stepping the target lot up a rung', () => {
     return build(stocks, 0);
   };
 
-  it('steps CVS to 500, where 400 is both the nearest lot and the floor lot', () => {
+  it('rounds CVS up to 500 from a 420-share target', () => {
     const p = at('CVS', 96.07, 659, 2, 5);
     const s = stockOf(p, 'CVS');
 
@@ -931,7 +934,7 @@ describe('stepping the target lot up a rung', () => {
     expect(lotAwareTarget(p, s).goal).toBe(500);
   });
 
-  it('steps GOOGL to 200 even though its band holds only two lots', () => {
+  it('rounds GOOGL up to 200, the only lot above its target that fits', () => {
     const p = at('GOOGL', 338.36, 83, 2, 5);
     const s = stockOf(p, 'GOOGL');
 
@@ -943,20 +946,22 @@ describe('stepping the target lot up a rung', () => {
     expect(highestLotWithinBand(p, s).highestLot).toBe(200);
   });
 
-  it('leaves CSX at 800, because its nearest lot already differs from its floor lot', () => {
+  it('rounds CSX up to 900, the one row where nearest and higher disagree', () => {
     const p = at('CSX', 49, 984, 2, 5);
     const s = stockOf(p, 'CSX');
 
-    /* The row that makes this a test rather than a rule. 800 is the nearest lot to an 823-share
-       target and the floor lot is 700, so they already differ — and 900 would be four times
-       further from what the model asked for, bought for nothing. */
+    /* 823 shares sit 23 past the 800 lot, so the nearest lot is 800 and the higher one is 900.
+       Every other row here has a target whose remainder is under fifty, where rounding up is also
+       the nearest lot and the two rules cannot be told apart. This is the row that separates
+       them, and it goes up. */
     expect(lowestLotWithinBand(p, s).lowestLot).toBe(700);
-    expect(lotAwareTarget(p, s)).toMatchObject({ goal: 800, pushed: false });
+    expect(lotAwareTarget(p, s)).toMatchObject({ goal: 900, pushed: true });
   });
 
-  it('does not step where the band has no room for the next rung', () => {
-    // NVDA's 9-15% band admits exactly one lot, 300. The clash stands rather than the mandate
-    // being broken to separate two columns.
+  it('falls back where the lot above the target is outside the band', () => {
+    /* NVDA's 9-15% band admits exactly one lot, 300. A 305-share target rounds up to 400, which is
+       past the ceiling, so it comes straight back to 300. The mandate is never broken to round
+       up. */
     const p = samplePortfolio();
     const s = stockOf(p, 'NVDA');
 
@@ -964,8 +969,8 @@ describe('stepping the target lot up a rung', () => {
     expect(lotAwareTarget(p, s).goal).toBe(300);
   });
 
-  it('does not step where the floor column is showing a band edge rather than a lot', () => {
-    // SNDK has no lot anywhere in its band, so there is no clash to resolve and nothing to step.
+  it('keeps the raw count where the band admits no lot at all', () => {
+    // SNDK has no lot anywhere in its band, so there is nothing to round up to.
     const p = at('SNDK', 1737.99, 27, 2, 5);
     const s = stockOf(p, 'SNDK');
 
