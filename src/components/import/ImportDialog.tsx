@@ -4,6 +4,7 @@ import { NumInput } from '../Inputs';
 import { applyImport, importIssues, pickModel } from '@/lib/import/apply';
 import { offModelSymbols, unpricedSymbols } from '@/lib/import/parse';
 import { CarriedModel, ParsedImport, Resolution } from '@/lib/import/types';
+import { inDisplayOrder } from '@/lib/engine';
 import { money } from '@/lib/format';
 import { ExplorerState } from '@/lib/types';
 
@@ -69,7 +70,9 @@ export default function ImportDialog({
      count beside them comes from `issues.unpriced` instead, so it falls as prices are entered
      while the fields themselves stay put — a row that vanished the moment it was filled in
      would reflow the list under the advisor's hands. */
-  const needPrice = parsed && model ? unpricedSymbols(model, parsed.holdings) : [];
+  /* Alphabetical, like everything else on screen: this is a grid of up to twenty boxes and the
+     advisor is reading a price off a statement, one symbol at a time. */
+  const needPrice = (parsed && model ? unpricedSymbols(model, parsed.holdings) : []).sort();
 
   const nothingFound = parsed && !model && !parsed.holdings;
   // Holdings alone cannot drive the tool: targets and bands live in the model export.
@@ -340,7 +343,9 @@ export default function ImportDialog({
                     </tr>
                   </thead>
                   <tbody>
-                    {preview.portfolio.stocks.map((s, i) => (
+                    {/* The order the table will use once this is applied, so the preview and the
+                        page behind it agree about where a position sits. */}
+                    {inDisplayOrder(preview.portfolio.stocks).map((s, i) => (
                       <tr key={s.id} className={i % 2 ? 'bg-panel-alt' : 'bg-panel'}>
                         <td className="td font-sans text-[14px] font-bold">
                           {s.sym}
