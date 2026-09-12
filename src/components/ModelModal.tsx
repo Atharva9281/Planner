@@ -1,5 +1,6 @@
 import Modal from './Modal';
 import { NumInput, SymInput } from './Inputs';
+import { inRankOrder, rankOf } from '@/lib/rank';
 import { Portfolio, Stock } from '@/lib/types';
 
 type ModelField = 'sym' | 'type' | 'target' | 'bandMin' | 'bandMax';
@@ -8,6 +9,7 @@ interface Props {
   portfolio: Portfolio;
   onClose: () => void;
   onField: (stockId: string, field: ModelField, value: string | number) => void;
+  onRank: (stockId: string, rank: number) => void;
   onAddStock: () => void;
   onRemoveStock: (stockId: string) => void;
   onCashBand: (field: 'cashFloor' | 'cashTarget' | 'cashCeiling', value: number) => void;
@@ -26,10 +28,18 @@ function duplicateSymbols(stocks: Stock[]): string[] {
   return [...seen.entries()].filter(([, n]) => n > 1).map(([sym]) => sym);
 }
 
+/** Places claimed by more than one position, which make the run's order arbitrary between them. */
+function duplicateRanks(stocks: Stock[]): number[] {
+  const seen = new Map<number, number>();
+  stocks.filter((s) => rankOf(s) > 0).forEach((s) => seen.set(s.rank!, (seen.get(s.rank!) ?? 0) + 1));
+  return [...seen.entries()].filter(([, n]) => n > 1).map(([rank]) => rank);
+}
+
 export default function ModelModal({
   portfolio,
   onClose,
   onField,
+  onRank,
   onAddStock,
   onRemoveStock,
   onCashBand,
@@ -38,6 +48,8 @@ export default function ModelModal({
   const duplicates = duplicateSymbols(portfolio.stocks);
   const targetTotal = portfolio.stocks.reduce((sum, s) => sum + s.target, 0);
   const invalidBand = portfolio.stocks.filter((s) => s.bandMin > s.bandMax);
+  const order = inRankOrder(portfolio.stocks);
+  const tiedRanks = duplicateRanks(portfolio.stocks);
 
   return (
     <Modal
@@ -82,6 +94,11 @@ export default function ModelModal({
           <table className="w-full border-collapse">
             <thead>
               <tr>
+                {/* First, because it is the one column here that is read down rather than across:
+                    the order is a property of the list, not of any one row in it. */}
+                <th className={TH} title="Order of conviction for the ranked deployment. 1 has first call on the cash. Leave blank to take no view.">
+                  Rank
+                </th>
                 <th className={TH}>Symbol</th>
                 <th className={TH}>Type</th>
                 <th className={TH}>Target %</th>
@@ -95,6 +112,18 @@ export default function ModelModal({
                 const bad = s.bandMin > s.bandMax;
                 return (
                   <tr key={s.id}>
+                    <td className={`${TD} w-16`}>
+                      <NumInput
+                        className={`field text-center ${
+                          rankOf(s) > 0 ? 'border-accent font-bold text-accent' : ''
+                        }`}
+                        value={rankOf(s)}
+                        blankZero
+                        placeholder="—"
+                        title={`Where ${s.sym} sits in the conviction order. 1 is first call on the cash; blank leaves it at its band floor.`}
+                        onCommit={(v) => onRank(s.id, v)}
+                      />
+                    </td>
                     <td className={`${TD} w-28`}>
                       <SymInput
                         className="field font-sans font-bold"
@@ -156,6 +185,39 @@ export default function ModelModal({
             + Add stock
           </button>
         </div>
+
+        {/* The order read back as a sentence. Twenty rank boxes down a column are hard to read as
+            a sequence, and the sequence is the thing being decided — this is the one place it can
+            be checked at a glance before the run acts on it. */}
+        {portfolio.stocks.length > 0 && (
+          <p className="mt-3 rounded-lg bg-paper px-3 py-2 text-[13px] leading-relaxed text-ink-soft">
+            {order.length === 0 ? (
+              <>
+                Nothing is ranked, so the deployment run has nowhere to put the cash. Number the
+                positions you have a view on — 1 gets first call on the money, then 2, then 3.
+                Everything left blank is taken to its band floor and held there.
+              </>
+            ) : (
+              <>
+                <span className="font-semibold text-ink">Conviction order:</span>{' '}
+                <span className="font-mono text-[12.5px]">
+                  {order.map((s, i) => `${i + 1}. ${s.sym}`).join('   ')}
+                </span>
+                {'. '}
+                The other {portfolio.stocks.length - order.length} go to their band floor and stay
+                there.
+              </>
+            )}
+          </p>
+        )}
+
+        {tiedRanks.length > 0 && (
+          <p className="mt-3 rounded-lg bg-warn-soft px-3 py-2 text-[13px] leading-relaxed text-warn">
+            More than one position is ranked {tiedRanks.join(' and ')}. The run works down the list
+            above, so the tie is broken by the order the model happens to list them in — which is
+            not a view you have taken. Give them separate numbers if the difference matters.
+          </p>
+        )}
 
         {invalidBand.length > 0 && (
           <p className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-[13px] leading-relaxed text-danger">

@@ -18,13 +18,16 @@ import { POSITIONS_TITLE } from '@/components/PositionsHead';
 import ImportDialog from '@/components/import/ImportDialog';
 import LoadNextAccount from '@/components/import/LoadNextAccount';
 import { TradeAllButtons, TradeAllResult } from '@/components/TradeAll';
+import { RankRunButton, RankRunResult } from '@/components/RankRun';
 import {
   addOffModel,
   addStock,
   applyTrade,
   BulkOutcome,
   clearAll,
+  deployByRank,
   OffModelSale,
+  RankOutcome,
   removeOffModel,
   removeStock,
   resetAll,
@@ -35,11 +38,13 @@ import {
   setCashBand,
   setOffModelField,
   setStockField,
+  setStockRank,
   setStockShares,
   tradeAll,
   undoLast,
   undoSize,
 } from '@/lib/actions';
+import { inRankOrder, runBlockers, StopAt } from '@/lib/rank';
 import { carryModel } from '@/lib/import/carry';
 import { CarriedModel, ParsedImport } from '@/lib/import/types';
 import { netOrders } from '@/lib/orders';
@@ -82,6 +87,14 @@ export default function Explorer({ slot }: { slot: Slot }) {
   const [bulk, setBulk] = useState<BulkOutcome | null>(null);
   /** The same, for the off-model list's "Sell all". */
   const [sale, setSale] = useState<OffModelSale | null>(null);
+  /** And for the ranked run, which reports more than either of them. */
+  const [run, setRun] = useState<RankOutcome | null>(null);
+  /**
+   * Where the ranked run stops spending. Held here rather than on the portfolio: it is a choice
+   * about this press, not a property of the mandate, and it should not follow the model to the
+   * next account.
+   */
+  const [stopAt, setStopAt] = useState<StopAt>('floor');
 
   const { portfolio, baseline, log } = state;
   const isEmpty = portfolio.stocks.length === 0 && portfolio.offModel.length === 0;
@@ -148,6 +161,10 @@ export default function Explorer({ slot }: { slot: Slot }) {
      own header line instead of giving them a row of their own. */
   const rowState = useRowCollapse(portfolio.stocks.map((s) => s.id));
 
+  /** How many positions carry a rank, and why the run cannot be made if it cannot. */
+  const rankedCount = inRankOrder(portfolio.stocks).length;
+  const blockers = runBlockers(portfolio);
+
   /**
    * Every trade button on a row goes through here: it names a destination, the planner works out
    * the direction, and the trade is priced against the state being updated rather than a captured
@@ -197,11 +214,36 @@ export default function Explorer({ slot }: { slot: Slot }) {
     setSale(outcome);
   };
 
+  /**
+   * The whole ranked run, in one press. Every row it moves is pinned open for the same reason a
+   * single trade pins its own: what the run did to a position is the thing worth looking at, and
+   * a settled row folds by default.
+   */
+  const handleDeployByRank = () => {
+    const { state: next, outcome } = deployByRank(state, { stopAt });
+    next.log
+      .filter((e) => e.batch === outcome.batch && e.stockId)
+      .forEach((e) => rowState.pin(e.stockId as string));
+    setState(next);
+    setRun(outcome);
+    setBulk(null);
+    setSale(null);
+  };
+
   /** Undo and reset both invalidate whatever the last press reported, so the line goes with them. */
   const handleUndo = () => {
     setBulk(null);
     setSale(null);
+    setRun(null);
     setState(undoLast);
+  };
+
+  /** Every result line is about a press that a reset has just thrown away. */
+  const handleResetAll = () => {
+    setBulk(null);
+    setSale(null);
+    setRun(null);
+    setState(resetAll);
   };
 
   const openModelWithNewStock = () => {
@@ -271,15 +313,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
               {/* A press of a universal button is one action, so say how much of one. */}
               Undo last action{undoDepth > 1 ? ` (${undoDepth} trades)` : ''}
             </button>
-            <button
-              className="btn-outline"
-              disabled={log.length === 0}
-              onClick={() => {
-                setBulk(null);
-                setSale(null);
-                setState(resetAll);
-              }}
-            >
+            <button className="btn-outline" disabled={log.length === 0} onClick={handleResetAll}>
               Reset everything to starting state
             </button>
             <button className="btn-outline" onClick={() => setOpenModal('holdings')}>
@@ -332,11 +366,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
             visible={stuck}
             canUndo={log.length > 0}
             onUndo={handleUndo}
-            onResetAll={() => {
-              setBulk(null);
-              setSale(null);
-              setState(resetAll);
-            }}
+            onResetAll={handleResetAll}
             onEditHoldings={() => setOpenModal('holdings')}
             onEditModel={() => setOpenModal('model')}
           />
@@ -356,11 +386,34 @@ export default function Explorer({ slot }: { slot: Slot }) {
                 </div>
               }
             >
+              {/* On its own strip rather than up on the header line with the three universal
+                  buttons. Partly because four controls and two button pairs do not fit a 1280
+                  window beside the title, and partly because it is not the same kind of control:
+                  those apply one column to every row, this one runs a sequence. */}
+              <RankRunButton
+                portfolio={portfolio}
+                ranked={rankedCount}
+                stopAt={stopAt}
+                onStopAt={setStopAt}
+                onRun={handleDeployByRank}
+                onEditRanks={() => setOpenModal('model')}
+                blockers={blockers}
+              />
+
               {bulk && (
                 <TradeAllResult
                   outcome={bulk}
                   cashFloor={portfolio.cashFloor}
                   undoable={log[log.length - 1]?.batch === bulk.batch}
+                  onUndo={handleUndo}
+                />
+              )}
+
+              {run && (
+                <RankRunResult
+                  outcome={run}
+                  portfolio={portfolio}
+                  undoable={log[log.length - 1]?.batch === run.batch}
                   onUndo={handleUndo}
                 />
               )}
@@ -475,6 +528,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
           portfolio={portfolio}
           onClose={() => setOpenModal(null)}
           onField={(id, field, value) => setState((cur) => setStockField(cur, id, field, value))}
+          onRank={(id, rank) => setState((cur) => setStockRank(cur, id, rank))}
           onAddStock={() => setState(addStock)}
           onRemoveStock={(id) => setState((cur) => removeStock(cur, id))}
           onCashBand={(field, value) => setState((cur) => setCashBand(cur, field, value))}

@@ -19,7 +19,22 @@ export function NumInput({
   step = '1',
   className,
   title,
-}: Common & { value: number; onCommit: (v: number) => void; step?: string }) {
+  placeholder,
+  blankZero = false,
+}: Common & {
+  value: number;
+  onCommit: (v: number) => void;
+  step?: string;
+  placeholder?: string;
+  /**
+   * Show an empty box rather than `0`.
+   *
+   * For fields where zero means "not set" rather than "set to nothing" — the conviction rank being
+   * the one. A column of twenty zeroes reads as twenty deliberate entries, when what it means is
+   * that the advisor has said nothing about any of them.
+   */
+  blankZero?: boolean;
+}) {
   const [draft, setDraft] = useState<string | null>(null);
 
   return (
@@ -28,7 +43,8 @@ export function NumInput({
       step={step}
       className={className}
       title={title}
-      value={draft ?? String(value)}
+      placeholder={placeholder}
+      value={draft ?? (blankZero && value === 0 ? '' : String(value))}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
         if (draft === null) return;

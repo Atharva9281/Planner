@@ -715,6 +715,32 @@ export function setStockField(
   );
 }
 
+/**
+ * Sets a position's place in the conviction order, or clears it.
+ *
+ * A model edit, so it leaves the baseline alone — the same reason a target or a band does. Nothing
+ * about the account's starting position changes when the advisor decides he likes one holding
+ * better than another.
+ *
+ * Anything not a positive whole number clears the rank outright rather than being stored and
+ * filtered later. A rank of 0, -1 or 2.5 has no meaning the run could act on, and keeping one on
+ * the row would leave the field showing a figure the run ignores.
+ */
+export function setStockRank(state: ExplorerState, id: string, value: number): ExplorerState {
+  const rank = Math.floor(Number(value));
+  return withPortfolio(
+    state,
+    mapStock(state.portfolio, id, (s) => {
+      if (!Number.isFinite(rank) || rank <= 0) {
+        const { rank: _cleared, ...rest } = s;
+        void _cleared;
+        return rest;
+      }
+      return { ...s, rank };
+    }),
+  );
+}
+
 export function setStockShares(state: ExplorerState, id: string, value: number): ExplorerState {
   const shares = Number(value) || 0;
   return {
