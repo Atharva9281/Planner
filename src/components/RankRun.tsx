@@ -22,9 +22,18 @@ const STAGE_NAME: Record<Stage, string> = {
   'lot-high': 'highest lot',
 };
 
+/**
+ * Both read as "spend down to here, no further", because that is what each one does.
+ *
+ * The ceiling option was first labelled "Stop at the cash ceiling", which promised something it
+ * cannot deliver. Steps are taken whole, so there is rarely a buy that lands cash exactly on the
+ * ceiling: the run stops before the step that would cross it, leaving the balance a little *above*
+ * — 8.36% against an 8% ceiling in the worked example. "Spend to" is honest about the direction and
+ * silent about the landing; "stop at" named a figure the run does not reach.
+ */
 const STOP_LABEL: Record<StopAt, string> = {
   floor: 'Spend to the cash floor',
-  ceiling: 'Stop at the cash ceiling',
+  ceiling: 'Spend to the cash ceiling',
 };
 
 export function RankRunButton({
@@ -85,7 +94,7 @@ export function RankRunButton({
           title={
             stopAt === 'floor'
               ? `Deploys every dollar the mandate allows, down to the ${portfolio.cashFloor}% floor less half a point.`
-              : `Stops as soon as cash is inside its band, at the ${portfolio.cashCeiling}% ceiling.`
+              : `Keeps the cash: no buy that would take the balance under its ${portfolio.cashCeiling}% ceiling. Steps are taken whole, so it stops a little above rather than exactly on it.`
           }
         >
           <option value="floor">{STOP_LABEL.floor}</option>
