@@ -44,6 +44,10 @@ export function carryModel(state: ExplorerState): CarriedModel | undefined {
            them again would let a rename quietly turn a hold-only row into a tradeable one. */
         tradeable: s.tradeable !== false,
         lotRounding: s.lotRounding !== false,
+        /* The conviction order goes with the mandate. It is the same securities and the same view
+           of them, and re-entering it per account is the kind of repeated work that eventually
+           gets entered differently. */
+        rank: s.rank,
       })),
       cashBand: {
         target: portfolio.cashTarget,

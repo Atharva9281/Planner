@@ -23,6 +23,12 @@ export interface ModelRow {
    */
   tradeable?: boolean;
   lotRounding?: boolean;
+  /**
+   * Conviction order for the ranked run, carried for the same reason the two flags above are: it
+   * is a fact about the *model*, and one model routinely covers several accounts. Undefined on a
+   * model read from a file, which no export carries an order in.
+   */
+  rank?: number;
 }
 
 export interface ParsedModel {

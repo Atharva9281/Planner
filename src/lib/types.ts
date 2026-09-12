@@ -30,6 +30,21 @@ export interface Stock {
    * dollars with fractional shares, where a round lot has no meaning. Defaults to true.
    */
   lotRounding?: boolean;
+  /**
+   * Conviction order for the ranked deployment run: 1 is first call on the cash, 2 second, and so
+   * on. Absent or 0 means unranked — the run takes the position to its band floor and leaves it
+   * there, which is the mandate met and nothing more.
+   *
+   * A property of the *model*, not of the account, and carried to the next account with the rest
+   * of it. Two reasons, both about how it gets used: the advisor arrives at an order by trying one
+   * and looking at the result, and `resetAll` deliberately leaves the model alone — so a ranking
+   * survives the reset that undoes the run it produced. And one model routinely covers several
+   * accounts, where the conviction order is the same fact about the same securities.
+   *
+   * Ranks need not be dense or unique. Sorting is stable, so rows sharing a rank keep the order the
+   * model gave them.
+   */
+  rank?: number;
 }
 
 /**

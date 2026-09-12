@@ -9,9 +9,23 @@ import {
   destinationShares,
   inDisplayOrder,
   offModelValue,
+  planToBandEdge,
+  planToDestination,
   planToLot,
   planToTarget,
 } from './engine';
+import {
+  cashLimit,
+  inRankOrder,
+  isRanked,
+  rankOf,
+  RANKED_STAGES,
+  Stage,
+  STAGES,
+  stageShares,
+  StopAt,
+  withinCashLimit,
+} from './rank';
 import { baselineFrom, emptyState, sampleState } from './defaultState';
 import { carryModel } from './import/carry';
 import {
@@ -288,6 +302,247 @@ export function tradeAll(
       belowCashFloor:
         startedInsideCashBand && cashPct(next.portfolio) < next.portfolio.cashFloor,
       batch,
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* the ranked run                                                      */
+/* ------------------------------------------------------------------ */
+
+/** One move the run made, in the terms the result reports it. */
+export interface RankStep {
+  sym: string;
+  /** 0 on the floor stage, which applies to ranked and unranked positions alike. */
+  rank: number;
+  stage: Stage;
+  action: 'BUY' | 'SELL';
+  shares: number;
+  /** Positive. The direction is in `action`. */
+  amount: number;
+  resultShares: number;
+}
+
+/** A step the cash could not reach, kept so the result can say what was left undone and why. */
+export interface RankSkip {
+  sym: string;
+  rank: number;
+  stage: Stage;
+  /** What the step would have cost. */
+  needed: number;
+  /** What was spendable at that moment, above the limit the run stops at. */
+  available: number;
+}
+
+/** Where one ranked position finished. */
+export interface RankLanding {
+  sym: string;
+  rank: number;
+  shares: number;
+  /** The furthest stage whose destination the position is sitting on, or null if it reached none. */
+  reached: Stage | null;
+}
+
+export interface RankOutcome {
+  batch: string;
+  stopAt: StopAt;
+  /** Off-model holdings sold in the first stage, and what they raised. */
+  offModelSold: number;
+  offModelProceeds: number;
+  /** Positions moved to their band floor in the second stage. */
+  floorTraded: number;
+  /**
+   * How far below the run's own cash limit the mandatory floor buys left the balance, in dollars.
+   * Zero in the ordinary case. Anything else means the mandate itself cost more than the account
+   * had, which is not a thing the run may decline to do — only one it has to report.
+   */
+  floorOverspend: number;
+  /** Positions that carried a rank, and positions left at the floor because they did not. */
+  ranked: number;
+  unranked: number;
+  steps: RankStep[];
+  skipped: RankSkip[];
+  landed: RankLanding[];
+  cashBefore: number;
+  cashAfter: number;
+  cashPctAfter: number;
+  /**
+   * The run finished every stage and the cash is *still* above its own ceiling.
+   *
+   * Worth its own field because it looks like success and is not a complete answer. Nothing was
+   * skipped, every ranked position is sitting on the highest lot its band admits, and there is
+   * simply nothing left inside the mandate to buy — so the remaining cash needs more names in the
+   * order, not more room in the limit. Reported separately from `stopped` for that reason: the two
+   * endings it distinguishes call for opposite responses.
+   */
+  cashAboveCeiling: boolean;
+  /** What ended the run: the cash limit, or running out of stages to climb. */
+  stopped: 'cash' | 'complete';
+}
+
+/** How the log describes each stage, so a step reads the same in the log as in the result. */
+const STAGE_LABEL: Record<Stage, string> = {
+  floor: 'its band floor, where the ranked run starts every position',
+  'lot-low': 'the lowest lot its band admits',
+  target: 'the lot-aware target',
+  'lot-high': 'the highest lot its band admits',
+};
+
+/**
+ * The ranked deployment run: sell what the model never asked for, bring every position to the
+ * mandate, then spend what is left strictly down the advisor's order of conviction.
+ *
+ * Five stages in one press, and the order is the whole design:
+ *
+ *   1. Every off-model holding is sold. The model is the mandate and these are outside it.
+ *   2. Every model position goes to its **band floor**. This is the only stage that is not
+ *      discretionary — a position under its floor is in breach — so it is the only one the cash
+ *      limit does not govern. It sells the overweights down and buys the underweights up, which
+ *      is what frees the money the rest of the run spends.
+ *   3. Each **ranked** position, best first, to the lowest lot its band admits.
+ *   4. Then, best first again, to the lot-aware target.
+ *   5. Then, best first again, to the highest lot its band admits.
+ *
+ * Stages 3 to 5 stop at the cash limit, and a step that does not fit is **skipped whole, never
+ * part-filled**: rank 2 gets its turn with the money rank 1 could not use. A half position bought
+ * because the cash ran out mid-step is a holding nobody chose, sitting between two numbers that
+ * both meant something.
+ *
+ * Unranked positions are not touched after stage 2. Sitting at the floor is the mandate met, and
+ * the point of the ranking is that the rest of the money goes where he says rather than being
+ * spread evenly over things he has no conviction in.
+ *
+ * The whole press is one batch, so Undo takes it back at once — which is what makes trying an
+ * ordering, looking at the orders, and trying a different one cost nothing.
+ *
+ * Nothing here decides *whether* to run it. The press is the decision, exactly as it is for the
+ * universal buttons.
+ */
+export function deployByRank(
+  state: ExplorerState,
+  { stopAt = 'floor' }: { stopAt?: StopAt } = {},
+): { state: ExplorerState; outcome: RankOutcome } {
+  const batch = `b${state.nextId}`;
+  const cashBefore = state.portfolio.cash;
+
+  let next = state;
+  const steps: RankStep[] = [];
+  const skipped: RankSkip[] = [];
+
+  const record = (stock: Stock, rank: number, stage: Stage, plan: TradePlan) => {
+    steps.push({
+      sym: stock.sym,
+      rank,
+      stage,
+      action: plan.action,
+      shares: plan.shares,
+      amount: plan.amount,
+      resultShares: plan.resultShares,
+    });
+  };
+
+  /* --- 1. everything the model never asked for --- */
+
+  let offModelSold = 0;
+
+  /* Read off the list as it stands, because selling removes the row: iterating the live array
+     would skip every other holding. */
+  for (const h of state.portfolio.offModel) {
+    if (offModelValue(h) === 0) continue;
+    const after = sellOffModel(next, h.id, batch);
+    if (after === next) continue;
+    next = after;
+    offModelSold += 1;
+  }
+
+  /* Read here rather than at the end: the stages below move the same balance, and what these
+     sales raised is a figure about this stage alone. */
+  const offModelProceeds = next.portfolio.cash - cashBefore;
+
+  /* --- 2. every position to its floor, funded or not --- */
+
+  let floorTraded = 0;
+
+  for (const s of inDisplayOrder(next.portfolio.stocks)) {
+    const live = next.portfolio.stocks.find((x) => x.id === s.id);
+    if (!live) continue;
+
+    const plan = planToBandEdge(next.portfolio, live, 'low', { clampToCash: false });
+    if (!plan) continue;
+
+    next = applyTrade(next, plan, batch);
+    record(live, 0, 'floor', plan);
+    floorTraded += 1;
+  }
+
+  const floorOverspend = Math.max(cashLimit(next.portfolio, stopAt) - next.portfolio.cash, 0);
+
+  /* --- 3 to 5. the ranked stages, one stage across the whole order before the next begins --- */
+
+  const ranked = inRankOrder(next.portfolio.stocks);
+
+  for (const stage of RANKED_STAGES) {
+    for (const entry of ranked) {
+      const live = next.portfolio.stocks.find((x) => x.id === entry.id);
+      if (!live) continue;
+
+      const goal = stageShares(next.portfolio, live, stage);
+      if (goal === null || goal === live.shares) continue;
+
+      const plan = planToDestination(next.portfolio, live, goal, STAGE_LABEL[stage], {
+        clampToCash: false,
+      });
+      if (!plan) continue;
+
+      /* Skipped whole rather than cut to fit, and the loop carries on to the next rank — which is
+         the rule that makes a ranking mean anything: the money rank 1 cannot use is rank 2's. */
+      if (plan.action === 'BUY' && !withinCashLimit(next.portfolio, plan.amount, stopAt)) {
+        skipped.push({
+          sym: live.sym,
+          rank: rankOf(live),
+          stage,
+          needed: plan.amount,
+          available: Math.max(next.portfolio.cash - cashLimit(next.portfolio, stopAt), 0),
+        });
+        continue;
+      }
+
+      next = applyTrade(next, plan, batch);
+      record(live, rankOf(live), stage, plan);
+    }
+  }
+
+  /* --- where each ranked position finished --- */
+
+  const landed: RankLanding[] = ranked.map((entry) => {
+    const live = next.portfolio.stocks.find((x) => x.id === entry.id) ?? entry;
+    /* Furthest first: stages can coincide — a target that is already the highest lot its band
+       admits — and the answer wanted is the best rung reached, not the first one that matches. */
+    const reached =
+      [...STAGES].reverse().find((st) => stageShares(next.portfolio, live, st) === live.shares) ??
+      null;
+    return { sym: live.sym, rank: rankOf(live), shares: live.shares, reached };
+  });
+
+  return {
+    state: next,
+    outcome: {
+      batch,
+      stopAt,
+      offModelSold,
+      offModelProceeds,
+      floorTraded,
+      floorOverspend,
+      ranked: ranked.length,
+      unranked: next.portfolio.stocks.filter((s) => !isRanked(s)).length,
+      steps,
+      skipped,
+      landed,
+      cashBefore,
+      cashAfter: next.portfolio.cash,
+      cashPctAfter: cashPct(next.portfolio),
+      cashAboveCeiling: cashPct(next.portfolio) > next.portfolio.cashCeiling,
+      stopped: skipped.length > 0 ? 'cash' : 'complete',
     },
   };
 }

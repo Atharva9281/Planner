@@ -559,8 +559,12 @@ export interface PlanOptions {
  *
  * Cash clamps a buy unless the caller says otherwise, and a clamped fill is reported as partial.
  * A sell is never clamped in either direction.
+ *
+ * Exported for the ranked run, which names its own destinations stage by stage and has to check
+ * each one against the cash limit before it is applied rather than after. Everything else reaches
+ * it through the four named planners below.
  */
-function toDestination(
+export function planToDestination(
   p: Portfolio,
   s: Stock,
   goal: number,
@@ -596,7 +600,7 @@ export function planToLot(
   /* Says which of the two it actually is. Where no lot serves this side the figure is the band
      edge itself, and calling that "the lot nearest the floor" on the trade log would be a plain
      falsehood about what was traded. */
-  return toDestination(
+  return planToDestination(
     p,
     s,
     goal,
@@ -605,19 +609,32 @@ export function planToLot(
   );
 }
 
-/** The band edge itself, with no lot preference: the last share count still inside the mandate. */
-export function planToBandEdge(p: Portfolio, s: Stock, edge: LotEdge): TradePlan | null {
+/**
+ * The band edge itself, with no lot preference: the last share count still inside the mandate.
+ *
+ * Takes options for the same reason `planToTarget` does. A per-row button asks "spend what is
+ * actually there" and clamps; the ranked run's move to the floor is the mandate rather than a
+ * preference, so it turns the clamp off and lets the shortfall be reported instead of silently
+ * part-filling a position the model requires.
+ */
+export function planToBandEdge(
+  p: Portfolio,
+  s: Stock,
+  edge: LotEdge,
+  options: PlanOptions = {},
+): TradePlan | null {
   if (!isTradeable(s) || s.price <= 0) return null;
 
   const { minShares, maxShares } = bandShareLimits(p, s);
   const goal = edge === 'high' ? maxShares : minShares;
   const bound = edge === 'high' ? s.bandMax : s.bandMin;
 
-  return toDestination(
+  return planToDestination(
     p,
     s,
     goal,
     `this stock's own ${bound}% ${edge === 'high' ? 'ceiling' : 'floor'}`,
+    options,
   );
 }
 
@@ -777,7 +794,7 @@ export function planToTarget(
   if (!isTradeable(s) || s.price <= 0) return null;
 
   const lt = lotAwareTarget(p, s);
-  return toDestination(
+  return planToDestination(
     p,
     s,
     lt.goal,

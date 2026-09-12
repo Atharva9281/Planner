@@ -47,6 +47,9 @@ export function applyImport(parsed: ParsedImport, resolution: Resolution): Explo
        win — see the note on `ModelRow.tradeable`. */
     tradeable: row.tradeable ?? classify(row.type ?? '') !== 'holdOnly',
     lotRounding: row.lotRounding ?? classify(row.type ?? '') === 'tradeable',
+    /* Only a carried model has one; a file-read model leaves the whole order unset, which is the
+       run declining to touch anything until he has said what he thinks. */
+    ...(row.rank ? { rank: row.rank } : {}),
   }));
 
   /* Anything held that the model has no row for. Always kept, and never a question at import.
