@@ -2,7 +2,7 @@ import { unzipSync, strFromU8 } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { applyTrade, sellOffModel, addOffModel, setOffModelField } from '../actions';
 import { sampleState } from '../defaultState';
-import { planToBandEdge, planToTarget } from '../engine';
+import { cashPct, planToBandEdge, planToTarget, totalValue } from '../engine';
 import { orderSummary } from '../orders';
 import { ExplorerState } from '../types';
 import { contextSheet, ordersSheet, tradeLogFilename, ORDER_HEADERS } from './tradeLog';
@@ -153,11 +153,50 @@ describe('the orders sheet', () => {
     expect(row[3]).toBe(String(first.openingShares));
     expect(row[4]).toBe(String(first.resultingShares));
     expect(row[5]).toBe(String(first.price));
-    expect(row[6]).toBe(String(first.amount));
     // Signed by direction, so the column sums to what the orders do to the balance.
-    expect(row[7]).toBe(String(first.cash));
+    expect(row[6]).toBe(String(first.cash));
     // No currency symbols or thousands separators anywhere in the numeric cells.
-    for (const i of [2, 3, 4, 5, 6, 7, 8]) expect(row[i]).toMatch(/^-?\d+(\.\d+)?$/);
+    for (const i of [2, 3, 4, 5, 6, 7]) expect(row[i]).toMatch(/^-?\d+(\.\d+)?$/);
+  });
+
+  /** Buys take money out of the account, so the column they sit in says so on its face. */
+  it('signs the amount by direction, with no second column repeating it', () => {
+    const state = traded();
+    const { orders } = orderSummary(state);
+    const rows = sheetFor(state).rows;
+
+    expect([...ORDER_HEADERS]).not.toContain('Cash');
+    expect([...ORDER_HEADERS]).not.toContain('Cash %');
+
+    orders.forEach((o, i) => {
+      const amount = rows[1 + i][ORDER_HEADERS.indexOf('Amount')].value as number;
+      expect(amount).toBeCloseTo(o.action === 'BUY' ? -o.amount : o.amount, 6);
+    });
+    expect(orders.some((o) => o.action === 'BUY')).toBe(true);
+  });
+
+  it('lands each position on a weight, against the band that judges it', () => {
+    const state = traded();
+    const rows = sheetFor(state).rows;
+    const { orders } = orderSummary(state);
+    const total = totalValue(state.portfolio);
+
+    const at = (row: number, header: (typeof ORDER_HEADERS)[number]) =>
+      rows[row][ORDER_HEADERS.indexOf(header)].value;
+
+    orders.forEach((o, i) => {
+      const stock = state.portfolio.stocks.find((s) => s.id === o.stockId);
+      expect(at(1 + i, 'Weight')).toBeCloseTo(((o.resultingShares * o.price) / total) * 100, 6);
+      expect(at(1 + i, 'Band')).toBe(
+        stock ? `${stock.bandMin.toFixed(1)} – ${stock.bandMax.toFixed(1)}%` : '',
+      );
+    });
+
+    // The off-model sale leaves nothing behind, and the model never gave it a band to leave it in.
+    const sold = orders.findIndex((o) => o.source === 'offModel');
+    expect(sold).toBeGreaterThanOrEqual(0);
+    expect(at(1 + sold, 'Weight')).toBe(0);
+    expect(at(1 + sold, 'Band')).toBe('');
   });
 
   it('carries the opening count, the traded count and the total that follows from them', () => {
@@ -175,15 +214,36 @@ describe('the orders sheet', () => {
     const state = traded();
     const xml = sheetXml(state);
     const { orders, cashBefore } = orderSummary(state);
+    const total = totalValue(state.portfolio);
 
     // Blank spacer, then the three summary lines. Read by reference: the middle columns are
     // empty, so a positional read would slide the money cell left.
     const foot = 1 + orders.length + 2;
     expect(cellAt(xml, `A${foot}`)).toBe('Cash before');
-    expect(cellAt(xml, `H${foot}`)).toBe(String(cashBefore));
+    expect(cellAt(xml, `G${foot}`)).toBe(String(cashBefore));
     expect(cellAt(xml, `A${foot + 1}`)).toBe('Cash after');
-    expect(cellAt(xml, `H${foot + 1}`)).toBe(String(state.portfolio.cash));
+    expect(cellAt(xml, `G${foot + 1}`)).toBe(String(state.portfolio.cash));
     expect(cellAt(xml, `A${foot + 2}`)).toBe('Total account');
+    expect(cellAt(xml, `G${foot + 2}`)).toBe(String(total));
+  });
+
+  /** Both balances as a percentage, and the band the closing one is judged against. */
+  it('gives the cash block the same percentage and band the rows above it carry', () => {
+    const state = traded();
+    const xml = sheetXml(state);
+    const { orders, cashBefore } = orderSummary(state);
+    const p = state.portfolio;
+    const total = totalValue(p);
+    const foot = 1 + orders.length + 2;
+
+    expect(Number(cellAt(xml, `H${foot}`))).toBeCloseTo((cashBefore / total) * 100, 6);
+    expect(Number(cellAt(xml, `H${foot + 1}`))).toBeCloseTo(cashPct(p), 6);
+    expect(cellAt(xml, `I${foot + 1}`)).toBe(
+      `${p.cashFloor.toFixed(1)} – ${p.cashCeiling.toFixed(1)}%`,
+    );
+
+    // The opening balance was a different number from the closing one, or this proves nothing.
+    expect(cashBefore).not.toBeCloseTo(p.cash, 2);
   });
 
   it('names an off-model sale as one, since it leaves no position behind', () => {
