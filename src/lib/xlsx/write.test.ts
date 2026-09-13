@@ -175,7 +175,7 @@ describe('the orders sheet', () => {
     expect(orders.some((o) => o.action === 'BUY')).toBe(true);
   });
 
-  it('lands each position on a weight, against the band that judges it', () => {
+  it('states where each position was, where it lands, and the band that judges it', () => {
     const state = traded();
     const rows = sheetFor(state).rows;
     const { orders } = orderSummary(state);
@@ -186,7 +186,11 @@ describe('the orders sheet', () => {
 
     orders.forEach((o, i) => {
       const stock = state.portfolio.stocks.find((s) => s.id === o.stockId);
-      expect(at(1 + i, 'Weight')).toBeCloseTo(((o.resultingShares * o.price) / total) * 100, 6);
+      expect(at(1 + i, 'Weight before')).toBeCloseTo(((o.openingShares * o.price) / total) * 100, 6);
+      expect(at(1 + i, 'Weight after')).toBeCloseTo(
+        ((o.resultingShares * o.price) / total) * 100,
+        6,
+      );
       expect(at(1 + i, 'Band')).toBe(
         stock ? `${stock.bandMin.toFixed(1)} – ${stock.bandMax.toFixed(1)}%` : '',
       );
@@ -195,8 +199,27 @@ describe('the orders sheet', () => {
     // The off-model sale leaves nothing behind, and the model never gave it a band to leave it in.
     const sold = orders.findIndex((o) => o.source === 'offModel');
     expect(sold).toBeGreaterThanOrEqual(0);
-    expect(at(1 + sold, 'Weight')).toBe(0);
+    expect(at(1 + sold, 'Weight before')).toBeGreaterThan(0);
+    expect(at(1 + sold, 'Weight after')).toBe(0);
     expect(at(1 + sold, 'Band')).toBe('');
+  });
+
+  /** Both columns share a denominator, so the move each order makes is the difference between them. */
+  it('measures both weights against the same account total', () => {
+    const state = traded();
+    const rows = sheetFor(state).rows;
+    const { orders } = orderSummary(state);
+
+    const at = (row: number, header: (typeof ORDER_HEADERS)[number]) =>
+      rows[row][ORDER_HEADERS.indexOf(header)].value as number;
+
+    orders.forEach((o, i) => {
+      const moved = at(1 + i, 'Weight after') - at(1 + i, 'Weight before');
+      const expected = ((o.resultingShares - o.openingShares) * o.price) / totalValue(state.portfolio);
+      expect(moved).toBeCloseTo(expected * 100, 6);
+      // A buy raises the weight and a sell lowers it, with no row contradicting its own Action.
+      expect(Math.sign(moved)).toBe(o.action === 'BUY' ? 1 : -1);
+    });
   });
 
   it('carries the opening count, the traded count and the total that follows from them', () => {
@@ -227,8 +250,11 @@ describe('the orders sheet', () => {
     expect(cellAt(xml, `G${foot + 2}`)).toBe(String(total));
   });
 
-  /** Both balances as a percentage, and the band the closing one is judged against. */
-  it('gives the cash block the same percentage and band the rows above it carry', () => {
+  /**
+   * The cash block is read as one more position: the opening balance's percentage sits under
+   * Weight before, the closing one's under Weight after, and the cash band under Band.
+   */
+  it('puts each cash figure under the column that names it', () => {
     const state = traded();
     const xml = sheetXml(state);
     const { orders, cashBefore } = orderSummary(state);
@@ -236,9 +262,13 @@ describe('the orders sheet', () => {
     const total = totalValue(p);
     const foot = 1 + orders.length + 2;
 
+    // H is Weight before, I is Weight after, J is Band.
     expect(Number(cellAt(xml, `H${foot}`))).toBeCloseTo((cashBefore / total) * 100, 6);
-    expect(Number(cellAt(xml, `H${foot + 1}`))).toBeCloseTo(cashPct(p), 6);
-    expect(cellAt(xml, `I${foot + 1}`)).toBe(
+    expect(cellAt(xml, `I${foot}`)).toBeUndefined();
+
+    expect(cellAt(xml, `H${foot + 1}`)).toBeUndefined();
+    expect(Number(cellAt(xml, `I${foot + 1}`))).toBeCloseTo(cashPct(p), 6);
+    expect(cellAt(xml, `J${foot + 1}`)).toBe(
       `${p.cashFloor.toFixed(1)} – ${p.cashCeiling.toFixed(1)}%`,
     );
 
@@ -253,7 +283,7 @@ describe('the orders sheet', () => {
     const row = orders.findIndex((o) => o.source === 'offModel');
 
     expect(row).toBeGreaterThanOrEqual(0);
-    expect(rowValues(xml, 2 + row).at(-1)).toContain('Not in the model');
+    expect(rowValues(xml, 2 + row).at(-1)).toBe('Not in model');
   });
 
   it('writes only headers and the cash block when nothing has to be traded', () => {

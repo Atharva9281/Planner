@@ -27,10 +27,15 @@ import { Cell, SheetSpec } from './write';
  * carrying no information the row did not have. One signed column sums to what the orders do to
  * the balance, which is the only thing the pair was ever for.
  *
- * `Weight` and `Band` replace what was a `Cash %` column repeating one account-level figure down
- * every row. A landing weight is the figure the mandate is actually written in, and it means
- * nothing without the band beside it: 2.5% is comfortable inside 2–5 and a breach of 3–4. The two
- * columns are read together or not at all.
+ * The three weight columns replace what was a `Cash %` column repeating one account-level figure
+ * down every row. Weight is the unit the mandate is actually written in, so the sheet states the
+ * whole sentence: where the position was, where this order puts it, and the band that judges the
+ * landing. A weight alone is not enough — 2.5% is comfortable inside 2–5 and a breach of 3–4 — and
+ * the landing alone does not show the size of the move the order is making.
+ *
+ * Before and after share a denominator: a trade swaps cash for shares and an off-model sale swaps
+ * shares for cash, so total account value does not move over the whole sheet. The two columns are
+ * therefore directly comparable, and comparable across rows as well.
  */
 
 export const ORDER_HEADERS = [
@@ -41,15 +46,15 @@ export const ORDER_HEADERS = [
   'Total shares',
   'Price',
   'Amount',
-  'Weight',
+  'Weight before',
+  'Weight after',
   'Band',
   'Note',
 ] as const;
 
-const COLUMN_WIDTHS = [12, 9, 11, 15, 13, 12, 14, 10, 15, 44];
+const COLUMN_WIDTHS = [12, 9, 11, 15, 13, 12, 14, 14, 13, 15, 26];
 
-/** Where the money column sits, which is also where the cash block below lines up. */
-const AMOUNT = ORDER_HEADERS.indexOf('Amount');
+type OrderHeader = (typeof ORDER_HEADERS)[number];
 
 const text = (value: string): Cell => ({ value, format: 'text' });
 const num = (value: number): Cell => ({ value, format: 'number' });
@@ -67,7 +72,10 @@ const blank = (): Cell => text('');
  * order that gets there is incidental.
  */
 function noteFor(o: Order, stock?: Stock): string {
-  if (o.source === 'offModel') return 'Not in the model. Sold entire, proceeds to cash.';
+  /* The row already says SELL, the whole opening quantity, and a closing total of nothing. Adding
+     "Sold entire, proceeds to cash" narrated three figures the reader can see, in a column that
+     exists to say the one thing they cannot. */
+  if (o.source === 'offModel') return 'Not in model';
   /* A bond fund is bought in dollars at whatever the NAV is, so it sits on no 100-share grid and
      "Lands off-lot" is not a finding about it — it is the unit of the row being reported as a
      fault. Every one of them would carry that note, on a sheet where the note column exists to
@@ -103,10 +111,9 @@ export function ordersSheet(
   const pctOfAccount = (dollars: number) => (total > 0 ? (dollars / total) * 100 : 0);
 
   for (const o of orders) {
-    /* Where the position ends up, in the unit the mandate is written in. An off-model holding is
-       sold whole, so it lands at nothing — 0.000% against a blank band, because the model never
-       gave it one. */
-    const landing = total > 0 ? ((o.resultingShares * o.price) / total) * 100 : 0;
+    /* Where the position stood, and where this order puts it, in the unit the mandate is written
+       in. An off-model holding is sold whole, so it lands at nothing — 0.000% against a blank
+       band, because the model never gave it one. */
     const stock = o.stockId ? bands.get(o.stockId) : undefined;
 
     rows.push([
@@ -118,7 +125,8 @@ export function ordersSheet(
       money(o.price),
       // Signed, so the column sums to what the orders do to the balance.
       money(o.cash),
-      percent(landing),
+      percent(pctOfAccount(o.openingShares * o.price)),
+      percent(pctOfAccount(o.resultingShares * o.price)),
       stock ? text(bandLabel(stock.bandMin, stock.bandMax)) : blank(),
       text(noteFor(o, stock)),
     ]);
@@ -127,29 +135,36 @@ export function ordersSheet(
   /* The cash these orders move between, and the account they move inside. Kept on this sheet
      rather than only on the Account sheet, because the person reading the orders is the person
      who needs to know whether the cash covers them.
-     Under the money column, with the percentage under the weights and the band under the bands —
-     so the cash block reads as one more position rather than as a footnote in another shape. */
-  const span = (label: string, value: Cell, ...tail: Cell[]) => {
-    const row = ORDER_HEADERS.map(() => blank());
+
+     Each figure sits under the column that names it, so the block reads as one more position
+     rather than as a footnote in a different shape: the opening balance's percentage under Weight
+     before, the closing one's under Weight after, and the cash band under Band. */
+  const span = (label: string, cells: Partial<Record<OrderHeader, Cell>>) => {
+    const row: Cell[] = ORDER_HEADERS.map(() => blank());
     row[0] = text(label);
-    row[AMOUNT] = value;
-    tail.forEach((cell, i) => (row[AMOUNT + 1 + i] = cell));
+    for (const [header, cell] of Object.entries(cells)) {
+      row[ORDER_HEADERS.indexOf(header as OrderHeader)] = cell;
+    }
     return row;
   };
 
   rows.push(ORDER_HEADERS.map(() => blank()));
-  rows.push(span('Cash before', money(cashBefore), percent(pctOfAccount(cashBefore))));
+  rows.push(
+    span('Cash before', {
+      Amount: money(cashBefore),
+      'Weight before': percent(pctOfAccount(cashBefore)),
+    }),
+  );
   /* The band beside it, because this is the line the run is aimed at: cash below its floor is the
      first thing to look for and the sheet should not need the Account tab to show it. */
   rows.push(
-    span(
-      'Cash after',
-      money(portfolio.cash),
-      percent(pctOfAccount(portfolio.cash)),
-      text(bandLabel(portfolio.cashFloor, portfolio.cashCeiling)),
-    ),
+    span('Cash after', {
+      Amount: money(portfolio.cash),
+      'Weight after': percent(pctOfAccount(portfolio.cash)),
+      Band: text(bandLabel(portfolio.cashFloor, portfolio.cashCeiling)),
+    }),
   );
-  rows.push(span('Total account', money(total)));
+  rows.push(span('Total account', { Amount: money(total) }));
 
   return { name: 'Orders', columns: COLUMN_WIDTHS, rows };
 }
