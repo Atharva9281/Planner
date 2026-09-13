@@ -208,23 +208,65 @@ export function RankRunResult({
           </span>
         )}
 
-        {/* The two endings, which call for opposite responses. */}
-        {outcome.stopped === 'cash' ? (
-          <span className="text-warn">
-            Stopped on cash: {outcome.skipped.length} step
-            {outcome.skipped.length === 1 ? '' : 's'} skipped, the first being{' '}
-            <span className="font-semibold">{outcome.skipped[0].sym}</span> to its{' '}
-            {STAGE_NAME[outcome.skipped[0].stage]} at {money(outcome.skipped[0].needed)}.
+        {outcome.cashAboveCeiling && (
+          <span className="font-semibold text-warn">
+            Above its {portfolio.cashCeiling}% ceiling.
           </span>
-        ) : (
-          outcome.cashAboveCeiling && (
-            <span className="text-warn">
-              Every ranked position reached its ceiling and the cash is still above its own. Rank
-              more of them to put the rest to work.
-            </span>
-          )
         )}
       </div>
+
+      {/*
+       * Money the run was told to spend and did not.
+       *
+       * Its own line, and unconditional on how the run ended, because this is the question the
+       * press was asking. Both endings can leave cash behind and for different reasons — the order
+       * ran out, or a step would not fit — and the response to each is different, so the line says
+       * which and then says where the money could still go.
+       */}
+      {outcome.undeployed > 0 && (
+        <div className="mt-2 border-t border-line pt-2 text-[13px] leading-relaxed">
+          <span className="font-semibold text-warn">
+            {money(outcome.undeployed)} left undeployed
+          </span>{' '}
+          <span className="text-ink-soft">
+            above the{' '}
+            {outcome.stopAt === 'floor'
+              ? `${portfolio.cashFloor}% floor less half a point`
+              : `${portfolio.cashCeiling}% ceiling`}
+            {'. '}
+            {outcome.stopped === 'cash' ? (
+              <>
+                {outcome.skipped.length} step{outcome.skipped.length === 1 ? '' : 's'} would not fit
+                whole — the largest being{' '}
+                <span className="font-semibold text-ink">{largestSkip(outcome).sym}</span> to its{' '}
+                {STAGE_NAME[largestSkip(outcome).stage]} at{' '}
+                {money(largestSkip(outcome).needed)}.
+              </>
+            ) : (
+              <>Every ranked position reached the top of its band, so the order ran out first.</>
+            )}
+            {outcome.headroom > 0 && (
+              <>
+                {' '}
+                The {outcome.unranked} unranked position
+                {outcome.unranked === 1 ? '' : 's'} could absorb{' '}
+                <span className="font-semibold text-ink">{money(outcome.headroom)}</span> inside
+                their own bands — rank some of them to reach it.
+              </>
+            )}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
+
+/**
+ * The skipped step worth naming: the largest, not the first.
+ *
+ * The stages climb, so the first thing to be refused is whatever the best-ranked position wanted
+ * next — often a small step that happened to arrive when the cash was nearly gone. The biggest
+ * refusal is the one that explains the leftover balance.
+ */
+const largestSkip = (o: RankOutcome) =>
+  o.skipped.reduce((worst, s) => (s.needed > worst.needed ? s : worst), o.skipped[0]);

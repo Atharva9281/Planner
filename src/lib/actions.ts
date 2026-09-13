@@ -24,6 +24,7 @@ import {
   STAGES,
   stageShares,
   StopAt,
+  unrankedHeadroom,
   withinCashLimit,
 } from './rank';
 import { baselineFrom, emptyState, sampleState } from './defaultState';
@@ -367,13 +368,32 @@ export interface RankOutcome {
   cashAfter: number;
   cashPctAfter: number;
   /**
-   * The run finished every stage and the cash is *still* above its own ceiling.
+   * Cash left sitting above the limit the run was told to spend down to.
    *
-   * Worth its own field because it looks like success and is not a complete answer. Nothing was
-   * skipped, every ranked position is sitting on the highest lot its band admits, and there is
-   * simply nothing left inside the mandate to buy — so the remaining cash needs more names in the
-   * order, not more room in the limit. Reported separately from `stopped` for that reason: the two
-   * endings it distinguishes call for opposite responses.
+   * The single most important number here, and the one this outcome originally failed to report.
+   * A run told to spend to the cash floor, which reaches every rung of a seven-name order and then
+   * stops $37,943 above that floor, has not done what was asked — but nothing was skipped and no
+   * mandate was broken, so every other field says success. On a real account it read `complete`,
+   * showed no warning, and left the advisor to work out from the balance that a third of the
+   * deployable cash had gone nowhere.
+   *
+   * Zero when the run genuinely spent down to its limit.
+   */
+  undeployed: number;
+  /**
+   * What the unranked positions could still absorb, at the prices this run used.
+   *
+   * The answer to `undeployed`, wherever the order simply ran out: the money has somewhere to go,
+   * and it is inside the mandate — it just belongs to positions the advisor took no view on.
+   */
+  headroom: number;
+  /**
+   * The run finished every stage and the cash is *still* above its own ceiling — outside its band
+   * altogether, not merely short of the target.
+   *
+   * Kept beside `undeployed` because the two are different failures. Undeployed cash may sit
+   * comfortably inside the cash band and still be money the advisor asked to have invested; cash
+   * above the ceiling is a breach of the cash mandate on top of that.
    */
   cashAboveCeiling: boolean;
   /** What ended the run: the cash limit, or running out of stages to climb. */
@@ -541,6 +561,8 @@ export function deployByRank(
       cashBefore,
       cashAfter: next.portfolio.cash,
       cashPctAfter: cashPct(next.portfolio),
+      undeployed: Math.max(next.portfolio.cash - cashLimit(next.portfolio, stopAt), 0),
+      headroom: unrankedHeadroom(next.portfolio),
       cashAboveCeiling: cashPct(next.portfolio) > next.portfolio.cashCeiling,
       stopped: skipped.length > 0 ? 'cash' : 'complete',
     },

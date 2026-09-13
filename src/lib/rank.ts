@@ -168,6 +168,27 @@ export function runBlockers(p: Portfolio): string[] {
 export const alreadyDeployed = (p: Portfolio, stopAt: StopAt): boolean =>
   p.cash <= cashLimit(p, stopAt);
 
+/**
+ * What the unranked positions could still absorb, in dollars, if they were ranked.
+ *
+ * The run parks them on their band floor and never returns, so this is the room the advisor has
+ * chosen not to use — and on this account it dwarfs the cash left over. Stating it turns "rank
+ * more of them" from advice into an arithmetic fact: here is the money, and here is where it could
+ * go inside the mandate.
+ *
+ * Measured to each position's highest lot, which is as far as the run would ever take it.
+ */
+export function unrankedHeadroom(p: Portfolio): number {
+  let room = 0;
+  for (const s of p.stocks) {
+    if (isRanked(s)) continue;
+    const goal = stageShares(p, s, 'lot-high');
+    if (goal === null) continue;
+    room += Math.max(goal - s.shares, 0) * s.price;
+  }
+  return room;
+}
+
 /** The cash percentage the run is aiming at, for reporting what it did against what it wanted. */
 export const cashTargetPct = (p: Portfolio, stopAt: StopAt): number =>
   stopAt === 'ceiling' ? p.cashCeiling : Math.max(p.cashFloor - CASH_FLEX, 0);

@@ -201,12 +201,105 @@ describe('the ranked run', () => {
    * buy inside the mandate — the answer is more names in the order, not more money.
    */
   it('says when the order ran out before the cash did', () => {
-    const { outcome } = deployByRank(ranked(['MU']));
+    const { state: after, outcome } = deployByRank(ranked(['MU']));
 
     expect(outcome.stopped).toBe('complete');
     expect(outcome.skipped).toEqual([]);
     expect(outcome.cashAboveCeiling).toBe(true);
     expect(outcome.cashPctAfter).toBeGreaterThan(sampleState().portfolio.cashCeiling);
+
+    // Nothing broke, and the money still did not go where it was asked to.
+    expect(outcome.undeployed).toBeCloseTo(
+      after.portfolio.cash - cashLimit(after.portfolio, 'floor'),
+      6,
+    );
+    expect(outcome.headroom).toBeGreaterThan(0);
+  });
+
+  /**
+   * The failure the outcome originally could not report, taken from the real account: a run told
+   * to spend to the cash floor reaches every rung of its order, stops well above that floor, and
+   * — because the leftover balance still sits inside the cash band — trips no other warning at all.
+   * `stopped` reads complete, `cashAboveCeiling` is false, and a third of the deployable cash has
+   * quietly gone nowhere.
+   */
+  it('reports cash left above the limit even when nothing else looks wrong', () => {
+    /* A $100,000 account, 9% in cash against a 6-10% band, and one ranked name that can hold at
+       most 5% of the account. The run takes it to its ceiling, nothing is skipped, and the cash it
+       could not absorb settles back at 9% — comfortably inside its band, and $3,500 above the 5.5%
+       the run was told to spend down to. */
+    const stock = (
+      id: string,
+      shares: number,
+      bandMin: number,
+      bandMax: number,
+      rank?: number,
+    ): Stock => ({
+      id,
+      sym: id,
+      price: 100,
+      target: (bandMin + bandMax) / 2,
+      bandMin,
+      bandMax,
+      shares,
+      lotRounding: false,
+      ...(rank ? { rank } : {}),
+    });
+
+    const state: ExplorerState = {
+      portfolio: {
+        stocks: [stock('A', 50, 2, 5, 1), stock('B', 860, 86, 90)],
+        cash: 9_000,
+        cashFloor: 6,
+        cashTarget: 8,
+        cashCeiling: 10,
+        offModel: [],
+      },
+      baseline: { shares: { A: 50, B: 860 }, cash: 9_000, offModel: [] },
+      log: [],
+      nextId: 1,
+    };
+
+    const { state: after, outcome } = deployByRank(state, { stopAt: 'floor' });
+
+    // Every other signal reads success.
+    expect(outcome.stopped).toBe('complete');
+    expect(outcome.skipped).toEqual([]);
+    expect(outcome.cashAboveCeiling).toBe(false);
+    expect(cashPct(after.portfolio)).toBeLessThan(after.portfolio.cashCeiling);
+    expect(cashPct(after.portfolio)).toBeGreaterThan(after.portfolio.cashFloor);
+
+    // And $3,500 the press asked to have invested is sitting where it started.
+    expect(after.portfolio.cash).toBeCloseTo(9_000, 6);
+    expect(outcome.undeployed).toBeCloseTo(3_500, 6);
+    expect(outcome.headroom).toBeCloseTo(4_000, 6);
+  });
+
+  it('is silent about undeployed cash when the run actually spent down to its limit', () => {
+    const { outcome } = deployByRank(ranked(['MU', 'NVDA', 'AAPL', 'AMZN', 'MSFT']), {
+      stopAt: 'floor',
+    });
+
+    expect(outcome.stopped).toBe('cash');
+    // Whatever is left is less than the cheapest step that was refused, or it would have been made.
+    const cheapest = Math.min(...outcome.skipped.map((s) => s.needed));
+    expect(outcome.undeployed).toBeLessThan(cheapest);
+  });
+
+  it('counts what the unranked positions could still absorb', () => {
+    const { state: after, outcome } = deployByRank(ranked(['MU']));
+
+    const byHand = after.portfolio.stocks
+      .filter((s) => !s.rank)
+      .reduce(
+        (sum, s) =>
+          sum + Math.max(stageShares(after.portfolio, s, 'lot-high')! - s.shares, 0) * s.price,
+        0,
+      );
+
+    expect(outcome.headroom).toBeCloseTo(byHand, 6);
+    // Every unranked position sits at its floor, so there is real room in all of them.
+    expect(outcome.headroom).toBeGreaterThan(outcome.undeployed);
   });
 
   it('spends more when told to go to the floor than when told to stop at the ceiling', () => {
