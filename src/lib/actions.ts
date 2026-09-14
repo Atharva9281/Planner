@@ -721,18 +721,14 @@ export function clearAll(): ExplorerState {
 export function setStockField(
   state: ExplorerState,
   id: string,
-  field: 'sym' | 'type' | 'price' | 'target' | 'bandMin' | 'bandMax',
+  field: 'type' | 'price' | 'target' | 'bandMin' | 'bandMax',
   value: string | number,
 ): ExplorerState {
   return withPortfolio(
     state,
     mapStock(state.portfolio, id, (s) =>
-      field === 'sym'
-        ? { ...s, sym: String(value).toUpperCase() }
-        : // A sleeve name is prose, so it keeps the casing the export gave it.
-          field === 'type'
-          ? { ...s, type: String(value) }
-          : { ...s, [field]: Number(value) || 0 },
+      // A sleeve name is prose, so it keeps the casing the export gave it.
+      field === 'type' ? { ...s, type: String(value) } : { ...s, [field]: Number(value) || 0 },
     ),
   );
 }
@@ -789,9 +785,21 @@ export function setCashBand(
   return withPortfolio(state, { ...state.portfolio, [field]: Number(value) || 0 });
 }
 
-export function addStock(state: ExplorerState): ExplorerState {
+/**
+ * The ticker is given at the moment of adding, because it cannot be changed afterwards: a model
+ * row's ticker is locked, so the advisor never renames AAPL into something else by a stray edit.
+ */
+export function addStock(state: ExplorerState, sym: string): ExplorerState {
   const id = `s${state.nextId}`;
-  const stock: Stock = { id, sym: 'NEW', price: 100, target: 5, bandMin: 3, bandMax: 7, shares: 0 };
+  const stock: Stock = {
+    id,
+    sym: sym.trim().toUpperCase(),
+    price: 100,
+    target: 5,
+    bandMin: 3,
+    bandMax: 7,
+    shares: 0,
+  };
   return {
     ...state,
     portfolio: { ...state.portfolio, stocks: [...state.portfolio.stocks, stock] },

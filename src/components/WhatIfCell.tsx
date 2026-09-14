@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { sharesForWeight, tradesByWeight, whatIf } from '@/lib/engine';
 import { money, pct, shares as fmtShares } from '@/lib/format';
 import { Portfolio, Stock } from '@/lib/types';
+import { dropFocusOnWheel } from './Inputs';
 
 /**
  * "I want to hold this many."
@@ -70,6 +71,7 @@ export default function WhatIfCell({
           placeholder={byWeight ? '% of acct' : 'shares'}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          onWheel={dropFocusOnWheel}
           onKeyDown={(e) => {
             if (e.key === 'Enter') calculate();
             if (e.key === 'Escape') clear();

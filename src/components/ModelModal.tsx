@@ -4,14 +4,14 @@ import { NumInput, SymInput } from './Inputs';
 import { inRankOrder, rankOf } from '@/lib/rank';
 import { Portfolio, Stock } from '@/lib/types';
 
-type ModelField = 'sym' | 'type' | 'target' | 'bandMin' | 'bandMax';
+type ModelField = 'type' | 'target' | 'bandMin' | 'bandMax';
 
 interface Props {
   portfolio: Portfolio;
   onClose: () => void;
   onField: (stockId: string, field: ModelField, value: string | number) => void;
   onRank: (stockId: string, rank: number) => void;
-  onAddStock: () => void;
+  onAddStock: (sym: string) => void;
   onRemoveStock: (stockId: string) => void;
   onCashBand: (field: 'cashFloor' | 'cashTarget' | 'cashCeiling', value: number) => void;
   onClearAll: () => void;
@@ -69,6 +69,16 @@ export default function ModelModal({
     ? portfolio.stocks.filter((s) => s.sym.toLowerCase().includes(needle))
     : portfolio.stocks;
   const tableRef = useRef<HTMLTableElement>(null);
+
+  /** The ticker a new row will carry. Asked for up front, since the row's ticker is locked. */
+  const [newSym, setNewSym] = useState('');
+  const addNew = () => {
+    if (!newSym.trim()) return;
+    // The new row would be hidden by a search that does not match it.
+    setQuery('');
+    onAddStock(newSym);
+    setNewSym('');
+  };
 
   return (
     <Modal
@@ -183,13 +193,8 @@ export default function ModelModal({
                         onCommit={(v) => onRank(s.id, v)}
                       />
                     </td>
-                    <td className={`${TD} w-28`}>
-                      <SymInput
-                        className="field font-sans font-bold"
-                        value={s.sym}
-                        onCommit={(v) => onField(s.id, 'sym', v)}
-                      />
-                    </td>
+                    {/* Locked. The ticker is what the row is, so it is read, never edited. */}
+                    <td className={`${TD} w-28 font-sans text-[14px] font-bold`}>{s.sym}</td>
                     {/* The sleeve, straight from the export. Descriptive, so it is text rather
                         than a number and nothing computes against it. */}
                     <td className={`${TD} w-52`}>
@@ -239,14 +244,22 @@ export default function ModelModal({
           </table>
         )}
 
-        <div className="mt-3 flex justify-end">
-          {/* The new row has no ticker yet, so a search still in the box would hide it. */}
-          <button
-            className="btn-chip"
-            onClick={() => {
-              setQuery('');
-              onAddStock();
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <input
+            className="field w-32 py-1.5 font-sans font-bold uppercase placeholder:font-normal placeholder:normal-case"
+            placeholder="Ticker"
+            aria-label="Ticker of the stock to add"
+            autoFocus={portfolio.stocks.length === 0}
+            value={newSym}
+            onChange={(e) => setNewSym(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') addNew();
             }}
+          />
+          <button
+            className="btn-chip disabled:opacity-45"
+            disabled={!newSym.trim()}
+            onClick={addNew}
           >
             + Add stock
           </button>

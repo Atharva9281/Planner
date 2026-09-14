@@ -293,9 +293,8 @@ describe('editing', () => {
 
   it('keeps two rows with the same symbol independent', () => {
     // Holdings key off the row's identity, so a duplicated symbol is two positions, not one.
-    let state = addStock(sampleState());
+    let state = addStock(sampleState(), 'msft');
     const newId = state.portfolio.stocks[state.portfolio.stocks.length - 1].id;
-    state = setStockField(state, newId, 'sym', 'msft');
     state = setStockShares(state, newId, 25);
 
     const rows = state.portfolio.stocks.filter((s) => s.sym === 'MSFT');
@@ -315,9 +314,9 @@ describe('editing', () => {
     expect(state.log).toHaveLength(0);
   });
 
-  it('uppercases a symbol as it is typed', () => {
-    const state = setStockField(sampleState(), 's1', 'sym', 'nvda');
-    expect(state.portfolio.stocks[0].sym).toBe('NVDA');
+  it('uppercases and trims the ticker a stock is added with', () => {
+    const state = addStock(sampleState(), ' nvda ');
+    expect(state.portfolio.stocks[state.portfolio.stocks.length - 1].sym).toBe('NVDA');
   });
 });
 

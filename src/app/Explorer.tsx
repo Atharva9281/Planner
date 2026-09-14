@@ -246,11 +246,6 @@ export default function Explorer({ slot }: { slot: Slot }) {
     setState(resetAll);
   };
 
-  const openModelWithNewStock = () => {
-    setState(addStock);
-    setOpenModal('model');
-  };
-
   return (
     <div className="mx-auto max-w-[100rem] px-5 py-6 sm:px-7">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-5">
@@ -348,7 +343,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
             setPendingCarried(carried ?? null);
             setOpenModal('import');
           }}
-          onAddStock={openModelWithNewStock}
+          onAddStock={() => setOpenModal('model')}
         />
       ) : (
         <>
@@ -529,7 +524,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
           onClose={() => setOpenModal(null)}
           onField={(id, field, value) => setState((cur) => setStockField(cur, id, field, value))}
           onRank={(id, rank) => setState((cur) => setStockRank(cur, id, rank))}
-          onAddStock={() => setState(addStock)}
+          onAddStock={(sym) => setState((cur) => addStock(cur, sym))}
           onRemoveStock={(id) => setState((cur) => removeStock(cur, id))}
           onCashBand={(field, value) => setState((cur) => setCashBand(cur, field, value))}
           onClearAll={() => {

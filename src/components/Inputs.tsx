@@ -8,6 +8,13 @@ import { useState } from 'react';
  * the user is mid-edit.
  */
 
+/**
+ * A number box that has focus steps its value when the mouse wheel turns over it, so scrolling a
+ * list past a rank or a band edit quietly changed the figure. Letting go of focus is what stops it,
+ * and unlike cancelling the wheel it leaves the page or dialog free to carry on scrolling.
+ */
+export const dropFocusOnWheel = (e: React.WheelEvent<HTMLInputElement>) => e.currentTarget.blur();
+
 interface Common {
   className?: string;
   title?: string;
@@ -46,6 +53,7 @@ export function NumInput({
       placeholder={placeholder}
       value={draft ?? (blankZero && value === 0 ? '' : String(value))}
       onChange={(e) => setDraft(e.target.value)}
+      onWheel={dropFocusOnWheel}
       onBlur={() => {
         if (draft === null) return;
         onCommit(Number(draft) || 0);
