@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import Modal from './Modal';
 import { NumInput, SymInput } from './Inputs';
 import { inRankOrder, rankOf } from '@/lib/rank';
@@ -16,8 +17,14 @@ interface Props {
   onClearAll: () => void;
 }
 
+/*
+ * Pinned to the top of the dialog's scrolling body, so a long model never loses its column names.
+ * The rule under it is a shadow rather than a border: in a collapsed-border table a sticky cell
+ * leaves its border behind with the rows, and the header would scroll away bare. `-top-5` undoes
+ * the body's `py-5`: a sticky cell stops at the padding, which left a strip of rows showing above.
+ */
 const TH =
-  'border-b border-line px-2 py-2 text-left text-[11.5px] font-semibold uppercase tracking-[0.04em] text-ink-soft';
+  'sticky -top-5 z-10 bg-panel shadow-[inset_0_-1px_0_var(--color-line)] px-2 py-2 text-left text-[11.5px] font-semibold uppercase tracking-[0.04em] text-ink-soft';
 const TD = 'border-b border-line-soft px-2 py-2.5 align-middle';
 
 /** Symbols on more than one row. Each row is still its own position, but the advisor should know
@@ -51,6 +58,18 @@ export default function ModelModal({
   const order = inRankOrder(portfolio.stocks);
   const tiedRanks = duplicateRanks(portfolio.stocks);
 
+  /*
+   * Narrows the rows to the tickers containing what is typed. Only the rows: the conviction order,
+   * the target total and the warnings below still read the whole model, because they are
+   * statements about all of it.
+   */
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? portfolio.stocks.filter((s) => s.sym.toLowerCase().includes(needle))
+    : portfolio.stocks;
+  const tableRef = useRef<HTMLTableElement>(null);
+
   return (
     <Modal
       title="Model: targets and drift bands"
@@ -75,8 +94,41 @@ export default function ModelModal({
       }
     >
       <section className="mb-8">
-        <div className="modal-section">
-          <h3>Stocks</h3>
+        <div className="modal-section items-center">
+          <div className="flex items-center gap-3">
+            <h3>Stocks</h3>
+            {portfolio.stocks.length > 0 && (
+              <>
+                <input
+                  type="search"
+                  className="field w-52 py-1.5 font-sans"
+                  placeholder="Search ticker"
+                  aria-label="Search the model by ticker"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Straight to the rank box of the first match, which is what the search is for.
+                    if (e.key === 'Enter') {
+                      const rank =
+                        tableRef.current?.querySelector<HTMLInputElement>('tbody tr input');
+                      rank?.focus();
+                      rank?.select();
+                    }
+                    // Clears the search rather than closing the dialog, while there is one to clear.
+                    if (e.key === 'Escape' && query) {
+                      e.stopPropagation();
+                      setQuery('');
+                    }
+                  }}
+                />
+                {needle && (
+                  <span className="text-[13px] text-ink-soft">
+                    {shown.length} of {portfolio.stocks.length}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
           {/* Stated, not judged. A cash band carries no target, so there is no honest total to
               check this against until a model file supplies one. */}
           {portfolio.stocks.length > 0 && (
@@ -91,7 +143,7 @@ export default function ModelModal({
             No stocks yet. Add one to begin.
           </p>
         ) : (
-          <table className="w-full border-collapse">
+          <table ref={tableRef} className="w-full border-collapse">
             <thead>
               <tr>
                 {/* First, because it is the one column here that is read down rather than across:
@@ -108,7 +160,14 @@ export default function ModelModal({
               </tr>
             </thead>
             <tbody>
-              {portfolio.stocks.map((s) => {
+              {shown.length === 0 && (
+                <tr>
+                  <td colSpan={7} className={`${TD} py-5 text-center text-[13.5px] text-ink-soft`}>
+                    No ticker matches “{query.trim()}”.
+                  </td>
+                </tr>
+              )}
+              {shown.map((s) => {
                 const bad = s.bandMin > s.bandMax;
                 return (
                   <tr key={s.id}>
@@ -181,7 +240,14 @@ export default function ModelModal({
         )}
 
         <div className="mt-3 flex justify-end">
-          <button className="btn-chip" onClick={onAddStock}>
+          {/* The new row has no ticker yet, so a search still in the box would hide it. */}
+          <button
+            className="btn-chip"
+            onClick={() => {
+              setQuery('');
+              onAddStock();
+            }}
+          >
             + Add stock
           </button>
         </div>
