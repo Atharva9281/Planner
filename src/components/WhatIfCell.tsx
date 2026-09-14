@@ -1,21 +1,19 @@
 import { useState } from 'react';
-import { afterTrading, sharesForWeight, tradesByWeight, whatIf } from '@/lib/engine';
+import { sharesForWeight, tradesByWeight, whatIf } from '@/lib/engine';
 import { money, pct, shares as fmtShares } from '@/lib/format';
 import { Portfolio, Stock } from '@/lib/types';
 
 /**
- * "Buy or sell this many."
+ * "I want to hold this many."
  *
- * The advisor types an amount to trade and gets the whole consequence: what it costs, where the
- * holding lands, where cash lands, and what weight the position ends at. Nothing moves until the
- * trade button is pressed, so this is a question you can ask as often as you like.
+ * The advisor types the holding he wants and gets the whole consequence: whether that is a buy or
+ * a sell, how many shares it moves, what it costs, where cash lands, and what weight the position
+ * ends at. Nothing moves until the trade button is pressed, so this is a question you can ask as
+ * often as you like.
  *
- * It takes a movement rather than a destination because every figure beside it is a movement:
- * room to the ceiling, shares the cash affords, room to the floor. When this box meant "hold this
- * many", reading 342 out of the ceiling column and typing it against a 379-share position
- * produced a sell of 37 — the right number, the opposite trade, and no warning that it had been
- * misread. The four destination columns still state where the position would land; this states
- * how far to move it, which is what the columns next to it are for.
+ * It takes a destination because every holding figure beside it is one — target holdings, the lot
+ * to target, the lots to each band edge. The direction is worked out from which side of the
+ * current holding the typed number sits, so there is no minus sign to remember.
  *
  * An amount that would leave the band is priced and flagged rather than refused — exploring is not
  * the same as proposing, and refusing to answer would just send the advisor to a calculator.
@@ -32,21 +30,21 @@ export default function WhatIfCell({
   /**
    * A bond fund is worked in percent of the account, so the box takes one.
    *
-   * A destination rather than a movement, which is the opposite of the share box beside it — and
-   * deliberately. The three figures on a fund's row are destinations too: its 5.5% floor, its 7.5%
-   * target, its 9.5% ceiling. Typing 7 asks for the fourth of those, in the same language, and it
-   * needs no minus sign to express a sell: 7 on a position sitting at 9 is a sale.
+   * A destination, the same as the share box: its 5.5% floor, 7.5% target and 9.5% ceiling are
+   * destinations too, and typing 7 asks for the fourth of those. 7 on a position sitting at 9 is a
+   * sale.
    */
   const byWeight = tradesByWeight(stock);
 
   const [draft, setDraft] = useState('');
-  /** The number typed. An amount of shares to trade, or a weight to end at. Null until asked. */
+  /** The number typed. A share count or a weight to end at. Null until asked. */
   const [asked, setAsked] = useState<number | null>(null);
 
+  // Zero is a real answer on both kinds of row: sell the whole position.
   const calculate = () => {
     const n = Number(draft);
     if (draft.trim() === '' || !Number.isFinite(n) || n < 0) return setAsked(null);
-    setAsked(byWeight ? n : n === 0 ? null : Math.trunc(n));
+    setAsked(byWeight ? n : Math.trunc(n));
   };
 
   const clear = () => {
@@ -54,36 +52,20 @@ export default function WhatIfCell({
     setAsked(null);
   };
 
-  /*
-   * The box asks for an amount to trade; the engine works in destinations. Converting here rather
-   * than in the engine keeps the lot rule, the band checks and the cash clamp exactly as they are.
-   *
-   * It reads as a delta because that is what the three room columns beside it state — room to the
-   * ceiling, shares the cash affords, room to the floor. Reading 342 there and typing it into a
-   * box that meant "hold 342" produced a sell of 37 on a 379-share position: the right figure,
-   * the opposite trade.
-   *
-   * A sell is clamped at the whole holding, since there is nothing beyond it to sell.
-   */
   const destination =
-    asked === null
-      ? null
-      : byWeight
-        ? sharesForWeight(portfolio, stock, asked)
-        : afterTrading(stock, asked);
+    asked === null ? null : byWeight ? sharesForWeight(portfolio, stock, asked) : asked;
 
   const result = destination === null ? null : whatIf(portfolio, stock, destination);
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1.5">
-        {/* On a share row there is no `min`, because a negative number is how a sell is expressed.
-            On a weight row there is one: a holding cannot be a negative share of the account, and
-            the direction comes from which side of the figure the position already sits. */}
+        {/* `min` on both: a holding cannot be negative, and the direction comes from which side
+            of the current holding the number sits. */}
         <input
           type="number"
           step={byWeight ? '0.1' : '1'}
-          min={byWeight ? 0 : undefined}
+          min={0}
           className="field w-24 text-right"
           placeholder={byWeight ? '% of acct' : 'shares'}
           value={draft}
@@ -95,7 +77,7 @@ export default function WhatIfCell({
           aria-label={
             byWeight
               ? `Percent of the account to hold in ${stock.sym}`
-              : `Shares of ${stock.sym} to buy, or a negative number to sell`
+              : `Shares of ${stock.sym} to hold`
           }
         />
         <button className="btn-amber" disabled={draft.trim() === ''} onClick={calculate}>
@@ -103,10 +85,10 @@ export default function WhatIfCell({
         </button>
       </div>
 
-      {/* Said once, under the empty box, rather than only discovered by typing a minus sign. */}
+      {/* Said once, under the empty box. */}
       {!result && (
         <span className="font-sans text-[12px] leading-snug text-ink-soft">
-          {byWeight ? 'Percent of the account to hold.' : 'Shares to buy. Use a minus to sell.'}
+          {byWeight ? 'Percent of the account to hold.' : 'Shares you want to hold.'}
         </span>
       )}
 
@@ -114,7 +96,7 @@ export default function WhatIfCell({
         <div className="rounded-lg border border-line bg-paper px-2.5 py-2">
           {result.action === null ? (
             <span className="font-sans text-[13px] text-ink-soft">
-              {/* Reached by asking to sell more than is held, on a position holding nothing. */}
+              {/* Reached by typing the holding the position already has. */}
               Nothing to trade — already holding{' '}
               {byWeight
                 ? money(result.targetShares * stock.price)
@@ -148,10 +130,6 @@ export default function WhatIfCell({
                 <p className="sub text-warn">
                   Cash covers {fmtShares(result.shares)} of {fmtShares(result.requested)} sh.
                 </p>
-              )}
-              {/* A sell asked for more than the position holds, so it was cut to the holding. */}
-              {result.action === 'SELL' && asked !== null && result.shares < Math.abs(asked) && (
-                <p className="sub text-warn">Can only sell {fmtShares(result.shares)} sh</p>
               )}
 
               {/* Where the trade lands, and only that.
