@@ -130,6 +130,19 @@ describe('migrating a restored workspace', () => {
     });
   });
 
+  it('puts back an off-model row an older sale removed, at nothing held', () => {
+    // Saved when selling deleted the row: the holding is only on the baseline and the log.
+    const w = saved([]);
+    const legacy = { id: 'o1', sym: 'RBRK', shares: 600, price: 86.65 };
+    w.portfolio.portfolio.offModel = [{ id: 'o2', sym: 'COHR', shares: 100, price: 305.37 }];
+    w.portfolio.baseline.offModel = [legacy, { id: 'o2', sym: 'COHR', shares: 100, price: 305.37 }];
+
+    expect(migrate(w).portfolio.portfolio.offModel).toEqual([
+      { id: 'o2', sym: 'COHR', shares: 100, price: 305.37 },
+      { id: 'o1', sym: 'RBRK', shares: 0, price: 86.65 },
+    ]);
+  });
+
   it('migrates the model set aside for the next account too', () => {
     const w = saved([]);
     w.portfolio.carried = {

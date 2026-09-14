@@ -64,6 +64,24 @@ export function offModelValue(h: OffModelHolding): number {
   return h.shares * h.price;
 }
 
+/**
+ * An off-model holding in the shape the what-if engine prices, so a buy or a sell on one goes
+ * through the same arithmetic and the same cash clamp as a model row.
+ *
+ * It has no target and no band. The 0-100% band means the band check can never fail, which is
+ * the honest answer for a position the mandate says nothing about — and the panel does not show
+ * that check at all.
+ */
+export const offModelAsStock = (h: OffModelHolding): Stock => ({
+  id: h.id,
+  sym: h.sym,
+  price: h.price,
+  shares: h.shares,
+  target: 0,
+  bandMin: 0,
+  bandMax: 100,
+});
+
 /* ------------------------------------------------------------------ */
 /* band limits                                                         */
 /* ------------------------------------------------------------------ */

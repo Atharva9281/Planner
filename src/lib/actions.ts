@@ -8,11 +8,14 @@ import {
   cashPct,
   destinationShares,
   inDisplayOrder,
+  LOT,
+  offModelAsStock,
   offModelValue,
   planToBandEdge,
   planToDestination,
   planToLot,
   planToTarget,
+  whatIf,
 } from './engine';
 import {
   cashLimit,
@@ -102,57 +105,68 @@ export function applyTrade(
 }
 
 /**
- * Sells an off-model holding in full. The whole holding is kept on the log entry so undo can put
- * it back exactly as it was, rather than reconstructing its price by dividing proceeds by shares.
+ * Trades an off-model holding to a chosen share count, a buy or a sell.
+ *
+ * Priced by the same `whatIf` as the Calculate box on a model row, so the preview and the trade
+ * agree and a buy is clamped to the cash the same way. The row stays in the list whatever is left
+ * of it, sold out included: the advisor goes on working from these after trading them.
  *
  * No asset class is exempt. Fixed income is held rather than traded *inside* the model, where it
  * has a target and a band; a holding the model has no row for has no such standing, whatever it
  * happens to be made of.
  */
-export function sellOffModel(
+export function tradeOffModel(
   state: ExplorerState,
   id: string,
-  /** Set when this sale is one of many from a single press, so undo takes them back together. */
+  targetShares: number,
+  /** Set when this trade is one of many from a single press, so undo takes them back together. */
   batch?: string,
 ): ExplorerState {
   const holding = state.portfolio.offModel.find((h) => h.id === id);
   if (!holding) return state;
 
   const before = state.portfolio;
-  const cashBefore = before.cash;
-  const pctBefore = cashPct(before);
-  const proceeds = offModelValue(holding);
+  const w = whatIf(before, offModelAsStock(holding), targetShares);
+  if (!w.action || w.shares <= 0) return state;
 
+  const resultShares = w.action === 'BUY' ? holding.shares + w.shares : holding.shares - w.shares;
   const portfolio: Portfolio = {
     ...before,
-    cash: before.cash + proceeds,
-    offModel: before.offModel.filter((h) => h.id !== id),
+    cash: w.cashAfter,
+    offModel: before.offModel.map((h) => (h.id === id ? { ...h, shares: resultShares } : h)),
   };
 
   const entry: LogEntry = {
     id: `t${state.nextId}`,
     sym: holding.sym,
-    action: 'SELL',
+    action: w.action,
     source: 'offModel',
     stockId: null,
-    shares: holding.shares,
+    offModelId: id,
+    shares: w.shares,
     price: holding.price,
-    amount: proceeds,
-    goalShares: null,
-    resultShares: 0,
-    resultIsLot: true,
-    partial: false,
-    label: 'not part of the model, sold entirely, proceeds added to cash',
-    cashBefore,
+    amount: w.amount,
+    goalShares: w.targetShares,
+    resultShares,
+    resultIsLot: resultShares % LOT === 0,
+    partial: w.partial,
+    label:
+      resultShares === 0
+        ? 'not part of the model, sold entirely, proceeds added to cash'
+        : `not part of the model, ${w.action === 'BUY' ? 'buy' : 'sell'} to a chosen holding of ${resultShares.toLocaleString('en-US')} shares`,
+    cashBefore: before.cash,
     cashAfter: portfolio.cash,
-    pctBefore,
+    pctBefore: cashPct(before),
     pctAfter: cashPct(portfolio),
-    restore: holding,
     ...(batch ? { batch } : {}),
   };
 
   return { ...state, portfolio, log: [...state.log, entry], nextId: state.nextId + 1 };
 }
+
+/** Sells an off-model holding in full. Its row stays, at nothing held. */
+export const sellOffModel = (state: ExplorerState, id: string, batch?: string): ExplorerState =>
+  tradeOffModel(state, id, 0, batch);
 
 /** What one press of "Sell all" on the off-model list did. */
 export interface OffModelSale {
@@ -188,8 +202,8 @@ export function sellAllOffModel(
   let next = state;
   let sold = 0;
 
-  /* Read once off the list as it stands: `sellOffModel` removes the row it sells, so iterating
-     the live array would skip every other holding. */
+  /* Read off the list as it stands before the press, so the count is of holdings that had
+     something to sell when it was made. */
   for (const h of state.portfolio.offModel) {
     // A row worth nothing has nothing to sell; it leaves through "Remove row" instead.
     if (offModelValue(h) === 0) continue;
@@ -606,15 +620,24 @@ function undoOne(state: ExplorerState): ExplorerState {
   const p = state.portfolio;
 
   if (entry.source === 'offModel') {
-    return {
-      ...state,
-      portfolio: {
-        ...p,
-        cash: p.cash - entry.amount,
-        offModel: entry.restore ? [...p.offModel, entry.restore] : p.offModel,
-      },
-      log,
-    };
+    const id = entry.offModelId ?? entry.restore?.id;
+    const cash = entry.action === 'SELL' ? p.cash - entry.amount : p.cash + entry.amount;
+    /* A sale from before sold rows kept their place removed the row, and the workspace migration
+       puts it back at nothing held — so the row is normally there to adjust. The append is for the
+       case it is not. */
+    const offModel = p.offModel.some((h) => h.id === id)
+      ? p.offModel.map((h) =>
+          h.id !== id
+            ? h
+            : {
+                ...h,
+                shares: entry.action === 'SELL' ? h.shares + entry.shares : h.shares - entry.shares,
+              },
+        )
+      : entry.restore
+        ? [...p.offModel, entry.restore]
+        : p.offModel;
+    return { ...state, portfolio: { ...p, cash, offModel }, log };
   }
 
   const portfolio = mapStock(
@@ -826,12 +849,13 @@ export function removeStock(state: ExplorerState, id: string): ExplorerState {
  *
  * Without this the baseline says the account never held the thing, and selling a holding entered
  * by hand produces no order at all — the cash moves and nothing explains why.
+ *
+ * Only the holding being edited. The baseline used to be re-copied whole from the live list, which
+ * quietly rewrote every *other* holding's starting position to wherever it had been traded to —
+ * so correcting one price made the order for a sale on another row vanish.
  */
-const withBaselineOffModel = (state: ExplorerState, offModel: OffModelHolding[]): ExplorerState => ({
-  ...state,
-  portfolio: { ...state.portfolio, offModel },
-  baseline: { ...state.baseline, offModel: offModel.map((h) => ({ ...h })) },
-});
+const startingOffModel = (state: ExplorerState): OffModelHolding[] =>
+  state.baseline.offModel ?? state.portfolio.offModel;
 
 export function addOffModel(state: ExplorerState): ExplorerState {
   const holding: OffModelHolding = {
@@ -841,7 +865,9 @@ export function addOffModel(state: ExplorerState): ExplorerState {
     price: 100,
   };
   return {
-    ...withBaselineOffModel(state, [...state.portfolio.offModel, holding]),
+    ...state,
+    portfolio: { ...state.portfolio, offModel: [...state.portfolio.offModel, holding] },
+    baseline: { ...state.baseline, offModel: [...startingOffModel(state), { ...holding }] },
     nextId: state.nextId + 1,
   };
 }
@@ -852,16 +878,30 @@ export function setOffModelField(
   field: 'sym' | 'shares' | 'price',
   value: string | number,
 ): ExplorerState {
-  return withBaselineOffModel(
-    state,
-    state.portfolio.offModel.map((h) =>
-      h.id !== id
-        ? h
-        : field === 'sym'
-          ? { ...h, sym: String(value).toUpperCase() }
-          : { ...h, [field]: Number(value) || 0 },
-    ),
-  );
+  const edit = (h: OffModelHolding): OffModelHolding =>
+    h.id !== id
+      ? h
+      : field === 'sym'
+        ? { ...h, sym: String(value).toUpperCase() }
+        : { ...h, [field]: Number(value) || 0 };
+  return {
+    ...state,
+    portfolio: { ...state.portfolio, offModel: state.portfolio.offModel.map(edit) },
+    baseline: { ...state.baseline, offModel: startingOffModel(state).map(edit) },
+  };
+}
+
+/**
+ * Whether an off-model row can be dropped outright: worth nothing now, held the same at the start,
+ * and never traded. A row sold down to nothing is worth nothing too, but removing it would take
+ * its sale off the order list with the cash it raised still in the account.
+ */
+export function canRemoveOffModel(state: ExplorerState, id: string): boolean {
+  const holding = state.portfolio.offModel.find((h) => h.id === id);
+  if (!holding || offModelValue(holding) !== 0) return false;
+  const opening = state.baseline.offModel?.find((h) => h.id === id);
+  if (opening && opening.shares !== holding.shares) return false;
+  return !state.log.some((e) => (e.offModelId ?? e.restore?.id) === id);
 }
 
 /**
@@ -874,15 +914,21 @@ export function setOffModelField(
  * them into the same number of dollars and leaves the total where it was.
  */
 export function removeOffModel(state: ExplorerState, id: string): ExplorerState {
-  const holding = state.portfolio.offModel.find((h) => h.id === id);
-  if (!holding || offModelValue(holding) !== 0) return state;
+  if (!canRemoveOffModel(state, id)) return state;
 
   // Worth nothing, so it leaves the starting position too rather than lingering there as a row a
   // reset would resurrect.
-  return withBaselineOffModel(
-    state,
-    state.portfolio.offModel.filter((h) => h.id !== id),
-  );
+  return {
+    ...state,
+    portfolio: {
+      ...state.portfolio,
+      offModel: state.portfolio.offModel.filter((h) => h.id !== id),
+    },
+    baseline: {
+      ...state.baseline,
+      offModel: startingOffModel(state).filter((h) => h.id !== id),
+    },
+  };
 }
 
 /** Re-snapshots the baseline from the live portfolio. Used after a bulk edit of starting holdings. */

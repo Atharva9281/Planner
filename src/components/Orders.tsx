@@ -94,7 +94,9 @@ export default function Orders({ state }: { state: ExplorerState }) {
                 <td className="td text-right text-ink-soft">{pct(cashPercent)}</td>
                 <td className="td text-[13px] whitespace-normal text-ink-soft">
                   {o.source === 'offModel'
-                    ? 'Not in the model. Sold entire, proceeds to cash.'
+                    ? o.resultingShares === 0
+                      ? 'Not in the model. Sold entire, proceeds to cash.'
+                      : 'Not in the model.'
                     : /* The landing, not the order size — the same figure the Total column shows.
                          Read off `shares`, a buy of 73 to reach 200 reported "Not a round lot". */
                       o.resultingShares % 100 === 0

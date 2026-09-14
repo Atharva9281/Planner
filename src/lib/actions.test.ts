@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addOffModel,
+  canRemoveOffModel,
   addStock,
   applyTrade,
   clearAll,
@@ -14,6 +15,7 @@ import {
   sellOffModel,
   setCash,
   setOffModelField,
+  tradeOffModel,
   setStockField,
   setStockShares,
   tradeAll,
@@ -137,11 +139,13 @@ describe('off-model holdings', () => {
     expect(totalValue(state.portfolio)).toBeCloseTo(562871.5 + 5000, 6);
   });
 
-  it('sells entirely and adds the proceeds to cash', () => {
+  it('sells entirely and adds the proceeds to cash, keeping the row at nothing held', () => {
     const state = withOther(100, 50);
     const after = sellOffModel(state, state.portfolio.offModel[0].id);
 
-    expect(after.portfolio.offModel).toHaveLength(0);
+    expect(after.portfolio.offModel).toEqual([
+      { id: expect.any(String), sym: 'OTHER', shares: 0, price: 50 },
+    ]);
     expect(after.portfolio.cash).toBeCloseTo(43000, 6);
     expect(after.log[0]).toMatchObject({ source: 'offModel', sym: 'OTHER', shares: 100 });
     // Total is unchanged: the holding turned into the same number of dollars.
@@ -172,7 +176,7 @@ describe('off-model holdings', () => {
     const { state: after, outcome } = sellAllOffModel(state);
 
     expect(outcome).toMatchObject({ sold: 3, proceeds: 7000 });
-    expect(after.portfolio.offModel).toHaveLength(0);
+    expect(after.portfolio.offModel.map((h) => h.shares)).toEqual([0, 0, 0]);
     expect(after.portfolio.cash).toBeCloseTo(38000 + 7000, 6);
     // A sale swaps holdings for dollars, so the account total does not move.
     expect(totalValue(after.portfolio)).toBeCloseTo(before, 6);
@@ -190,7 +194,7 @@ describe('off-model holdings', () => {
 
     const back = undoLast(sold);
     expect(back.log).toHaveLength(0);
-    expect(back.portfolio.offModel).toHaveLength(2);
+    expect(back.portfolio.offModel.map((h) => h.shares)).toEqual([100, 10]);
     expect(back.portfolio.cash).toBeCloseTo(38000, 6);
   });
 
@@ -220,6 +224,88 @@ describe('off-model holdings', () => {
     expect(after.portfolio.offModel).toHaveLength(0);
     expect(totalValue(after.portfolio)).toBe(before);
     expect(after.log).toHaveLength(0);
+  });
+
+  it('sells part of a holding down to a chosen count', () => {
+    const state = withOther(100, 50);
+    const id = state.portfolio.offModel[0].id;
+    const after = tradeOffModel(state, id, 40);
+
+    expect(after.portfolio.offModel[0].shares).toBe(40);
+    expect(after.portfolio.cash).toBeCloseTo(38000 + 60 * 50, 6);
+    expect(after.log[0]).toMatchObject({
+      source: 'offModel',
+      offModelId: id,
+      action: 'SELL',
+      shares: 60,
+      resultShares: 40,
+    });
+  });
+
+  it('buys more, clamped to the cash like a model row', () => {
+    // $38,000 of cash at $50 a share affords 760, so asking to hold 1,000 buys 760 of the 900.
+    const state = withOther(100, 50);
+    const id = state.portfolio.offModel[0].id;
+    const after = tradeOffModel(state, id, 1000);
+
+    expect(after.portfolio.offModel[0].shares).toBe(860);
+    expect(after.portfolio.cash).toBeCloseTo(0, 6);
+    expect(after.log[0]).toMatchObject({ action: 'BUY', shares: 760, partial: true });
+    expect(totalValue(after.portfolio)).toBeCloseTo(totalValue(state.portfolio), 6);
+  });
+
+  it('buys back into a holding already sold out, and undoes either way', () => {
+    const state = withOther(100, 50);
+    const id = state.portfolio.offModel[0].id;
+    const sold = sellOffModel(state, id);
+    const bought = tradeOffModel(sold, id, 30);
+
+    expect(bought.portfolio.offModel[0].shares).toBe(30);
+    expect(undoLast(bought).portfolio.offModel[0].shares).toBe(0);
+    expect(undoLast(undoLast(bought)).portfolio.offModel[0].shares).toBe(100);
+    expect(undoLast(undoLast(bought)).portfolio.cash).toBeCloseTo(38000, 6);
+  });
+
+  it('will not remove a row sold down to nothing, which would lose its order', () => {
+    const state = withOther(100, 50);
+    const id = state.portfolio.offModel[0].id;
+    const sold = sellOffModel(state, id);
+
+    expect(canRemoveOffModel(sold, id)).toBe(false);
+    expect(removeOffModel(sold, id)).toBe(sold);
+  });
+
+  it('keeps one holding\'s sale when another holding is edited', () => {
+    let state = withOther(100, 50);
+    state = addOffModel(state);
+    const [first, second] = state.portfolio.offModel.map((h) => h.id);
+    state = sellOffModel(state, first);
+    state = setOffModelField(state, second, 'price', 75);
+
+    expect(state.baseline.offModel?.find((h) => h.id === first)?.shares).toBe(100);
+  });
+
+  it('undoes a sale saved before sold rows kept their place', () => {
+    // The migrated shape: the row back at nothing held, the old entry carrying the whole holding.
+    const base = sampleState();
+    const holding = { id: 'o1', sym: 'RBRK', shares: 600, price: 86.65 };
+    const state: ExplorerState = {
+      ...base,
+      portfolio: { ...base.portfolio, cash: 38000 + 51990, offModel: [{ ...holding, shares: 0 }] },
+      baseline: { ...base.baseline, offModel: [holding] },
+      log: [
+        {
+          id: 't1', sym: 'RBRK', action: 'SELL', source: 'offModel', stockId: null, shares: 600,
+          price: 86.65, amount: 51990, goalShares: null, resultShares: 0, resultIsLot: true,
+          partial: false, label: 'sold', cashBefore: 38000, cashAfter: 89990, pctBefore: 0,
+          pctAfter: 0, restore: holding,
+        },
+      ],
+    };
+
+    const back = undoLast(state);
+    expect(back.portfolio.offModel).toEqual([holding]);
+    expect(back.portfolio.cash).toBeCloseTo(38000, 6);
   });
 
   it('restores a zero-share holding without corrupting its price', () => {

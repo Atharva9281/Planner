@@ -16,6 +16,8 @@ interface Props {
   onOffModelField: (id: string, field: 'sym' | 'shares' | 'price', value: string | number) => void;
   onSellOffModel: (id: string) => void;
   onRemoveOffModel: (id: string) => void;
+  /** False for a row sold down to nothing, whose sale would leave the order list with it. */
+  canRemoveOffModel: (id: string) => boolean;
 }
 
 const TH =
@@ -32,6 +34,7 @@ export default function HoldingsModal({
   onOffModelField,
   onSellOffModel,
   onRemoveOffModel,
+  canRemoveOffModel,
 }: Props) {
   const offModelTotal = portfolio.offModel.reduce((sum, h) => sum + offModelValue(h), 0);
 
@@ -168,7 +171,9 @@ export default function HoldingsModal({
                   {/* One way out per row, and neither can move the account total on its own:
                       a holding worth something is sold, a row worth nothing is removed. */}
                   <td className={`${TD} whitespace-nowrap text-right`}>
-                    {offModelValue(h) === 0 ? (
+                    {offModelValue(h) === 0 && !canRemoveOffModel(h.id) ? (
+                      <span className="text-[13px] text-ink-soft">nothing held</span>
+                    ) : offModelValue(h) === 0 ? (
                       <button
                         className="btn-ghost"
                         title="Nothing is held here, so removing this row changes no other number"

@@ -78,31 +78,38 @@ export function netOrders(state: ExplorerState): Order[] {
     });
   }
 
-  /* An off-model holding leaves by being sold whole, so it is absent from the live list rather
-     than changed. Comparing against the baseline finds it; the log cannot be used for this,
-     because a reset empties the log while these have to keep being reported. */
-  const held = new Set(state.portfolio.offModel.map((h) => h.id));
-  for (const gone of state.baseline.offModel ?? []) {
-    if (held.has(gone.id)) continue;
-    orders.push(orderFromSoldHolding(gone));
+  /* Off-model holdings net the same way, against the starting position rather than the log,
+     because a reset empties the log while these have to keep being reported. A holding missing
+     from the live list is one an older version removed when it sold it whole. */
+  const now = new Map(state.portfolio.offModel.map((h) => [h.id, h]));
+  for (const opening of state.baseline.offModel ?? []) {
+    const current = now.get(opening.id);
+    const resulting = current?.shares ?? 0;
+    const delta = resulting - opening.shares;
+    if (delta === 0) continue;
+    orders.push(offModelOrder(current ?? opening, opening.shares, resulting));
   }
 
   return orders;
 }
 
-/** Sold whole, so it opens at whatever was held and ends at nothing. */
-const orderFromSoldHolding = (h: OffModelHolding): Order => ({
-  stockId: null,
-  sym: h.sym,
-  action: 'SELL',
-  shares: h.shares,
-  openingShares: h.shares,
-  resultingShares: 0,
-  price: h.price,
-  amount: h.shares * h.price,
-  cash: h.shares * h.price,
-  source: 'offModel',
-});
+const offModelOrder = (h: OffModelHolding, opening: number, resulting: number): Order => {
+  const shares = Math.abs(resulting - opening);
+  const amount = shares * h.price;
+  const buy = resulting > opening;
+  return {
+    stockId: null,
+    sym: h.sym,
+    action: buy ? 'BUY' : 'SELL',
+    shares,
+    openingShares: opening,
+    resultingShares: resulting,
+    price: h.price,
+    amount,
+    cash: buy ? -amount : amount,
+    source: 'offModel',
+  };
+};
 
 export function orderSummary(state: ExplorerState): OrderSummary {
   return {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyTrade, resetAll, sellOffModel } from './actions';
+import { applyTrade, resetAll, sellOffModel, tradeOffModel } from './actions';
 import { baselineFrom, sampleState } from './defaultState';
 import { planToBandEdge, planToLot, planToShares, planToTarget, totalValue } from './engine';
 import { netOrders, orderSummary } from './orders';
@@ -120,13 +120,26 @@ describe('off-model holdings in the order list', () => {
     return { portfolio, baseline: baselineFrom(portfolio), log: [], nextId: 2 };
   };
 
-  it('reports one sold out of the account, though it is no longer in the list', () => {
+  it('reports one sold out of the account', () => {
     const sold = sellOffModel(withHolding(), 'o1');
     const orders = netOrders(sold);
 
     expect(orders).toHaveLength(1);
     expect(orders[0]).toMatchObject({ sym: 'FLUD', action: 'SELL', shares: 1000, amount: 25_000 });
     expect(orders[0].source).toBe('offModel');
+  });
+
+  it('reports a part sale and a buy as the net change from the start', () => {
+    const part = tradeOffModel(withHolding(), 'o1', 400);
+    expect(netOrders(part)).toEqual([
+      expect.objectContaining({ action: 'SELL', shares: 600, openingShares: 1000, resultingShares: 400 }),
+    ]);
+
+    // Sold whole, then bought back past where it started: one net buy of 100.
+    const back = tradeOffModel(sellOffModel(withHolding(), 'o1'), 'o1', 1100);
+    expect(netOrders(back)).toEqual([
+      expect.objectContaining({ action: 'BUY', shares: 100, cash: -2500 }),
+    ]);
   });
 
   /**

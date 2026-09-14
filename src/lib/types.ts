@@ -135,7 +135,12 @@ export interface LogEntry {
    *  crossings are derived from these at render time, against the current band. */
   pctBefore: number;
   pctAfter: number;
-  /** The off-model holding this sale removed, kept whole so undo can restore it exactly. */
+  /** The off-model holding this trade was made on. Its row stays in the list whatever is left. */
+  offModelId?: string;
+  /**
+   * The holding an older sale removed outright, from before a sold holding kept its row. Only on
+   * log entries in a workspace saved back then; undo reads it to put that row back.
+   */
   restore?: OffModelHolding;
   /**
    * Set when this trade was one of many made by a single press of a universal button, and shared

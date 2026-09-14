@@ -23,10 +23,13 @@ export default function WhatIfCell({
   portfolio,
   stock,
   onTrade,
+  banded = true,
 }: {
   portfolio: Portfolio;
   stock: Stock;
   onTrade: (stockId: string, targetShares: number) => void;
+  /** False on a holding the model has no row for, which has no band to land inside or outside. */
+  banded?: boolean;
 }) {
   /**
    * A bond fund is worked in percent of the account, so the box takes one.
@@ -156,27 +159,31 @@ export default function WhatIfCell({
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-ink-soft">Weight</dt>
-                  <dd className={result.withinBand ? '' : 'font-semibold text-danger'}>
+                  <dd className={!banded || result.withinBand ? '' : 'font-semibold text-danger'}>
                     {pct(result.weightAfter)}
                   </dd>
                 </div>
               </dl>
 
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <span
-                  className={`badge ${
-                    result.withinBand ? 'bg-ok-soft text-ok' : 'bg-danger-soft text-danger'
-                  }`}
-                >
-                  {result.withinBand
-                    ? 'inside the band'
-                    : `outside ${stock.bandMin}–${stock.bandMax}%`}
-                </span>
-                {/* Meaningless on a fund, which is not bought on the 100-share grid at all. */}
-                {!byWeight && result.isLot && (
-                  <span className="badge bg-ok-soft text-ok">clean lot</span>
-                )}
-              </div>
+              {(banded || (!byWeight && result.isLot)) && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {banded && (
+                    <span
+                      className={`badge ${
+                        result.withinBand ? 'bg-ok-soft text-ok' : 'bg-danger-soft text-danger'
+                      }`}
+                    >
+                      {result.withinBand
+                        ? 'inside the band'
+                        : `outside ${stock.bandMin}–${stock.bandMax}%`}
+                    </span>
+                  )}
+                  {/* Meaningless on a fund, which is not bought on the 100-share grid at all. */}
+                  {!byWeight && result.isLot && (
+                    <span className="badge bg-ok-soft text-ok">clean lot</span>
+                  )}
+                </div>
+              )}
 
               <div className="mt-2.5 flex gap-1.5">
                 <button

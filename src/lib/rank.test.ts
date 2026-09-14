@@ -172,7 +172,7 @@ describe('the ranked run', () => {
 
     expect(outcome.offModelSold).toBe(1);
     expect(outcome.offModelProceeds).toBeCloseTo(5000, 6);
-    expect(after.portfolio.offModel).toEqual([]);
+    expect(after.portfolio.offModel).toEqual([{ id: 'o1', sym: 'LEGACY', shares: 0, price: 50 }]);
   });
 
   it('puts every position on its floor, ranked or not', () => {

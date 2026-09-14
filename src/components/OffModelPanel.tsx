@@ -1,6 +1,7 @@
 import Panel from './Panel';
+import WhatIfCell from './WhatIfCell';
 import { OffModelSale } from '@/lib/actions';
-import { offModelValue, totalValue } from '@/lib/engine';
+import { offModelAsStock, offModelValue, totalValue } from '@/lib/engine';
 import { money, pct, shares as fmtShares } from '@/lib/format';
 import { Portfolio } from '@/lib/types';
 
@@ -21,11 +22,16 @@ import { Portfolio } from '@/lib/types';
  * Every asset class here can be sold, fixed income included. Being held rather than traded is a
  * rule about positions the model asks for, where a target and a band say what to hold. A holding
  * the model has no row for has no such standing, whatever it is made of.
+ *
+ * The advisor keeps working from this table after trading on it, so a row stays whatever is left
+ * of the holding — sold out included — and each one takes the same Calculate box as a model row,
+ * to buy or sell any amount. Sell and Sell all stay as the one-click way to clear them.
  */
 export default function OffModelPanel({
   portfolio,
   sale,
   onSell,
+  onTrade,
   onSellAll,
   onUndo,
   undoable,
@@ -34,6 +40,8 @@ export default function OffModelPanel({
   /** The last Sell all, reported until anything else happens. */
   sale: OffModelSale | null;
   onSell: (id: string) => void;
+  /** A buy or a sell to a chosen holding, from the Calculate box. */
+  onTrade: (id: string, targetShares: number) => void;
   onSellAll: () => void;
   onUndo: () => void;
   undoable: boolean;
@@ -87,7 +95,10 @@ export default function OffModelPanel({
           moves the dollar width of every band in the table above.
         </div>
 
-        <div className="overflow-x-auto">
+        {/* `table-stick`, the same as the positions table, so the column names follow the page
+            down under the compact bar. It used to sit in an `overflow-x-auto` box, and a scroll
+            box of its own is exactly what stops a header sticking to the window. */}
+        <div className="table-stick">
           <table className="w-full border-collapse">
             <thead>
               <tr>
@@ -96,13 +107,14 @@ export default function OffModelPanel({
                 <th className="th">Price</th>
                 <th className="th">Value</th>
                 <th className="th">Sell</th>
+                <th className="th th-lead w-[260px]">Buy or sell</th>
               </tr>
             </thead>
             <tbody>
               {holdings.map((h, i) => {
                 const value = offModelValue(h);
                 return (
-                  <tr key={h.id} className={i % 2 ? 'bg-panel-alt' : 'bg-panel'}>
+                  <tr key={h.id} className={`align-top ${i % 2 ? 'bg-panel-alt' : 'bg-panel'}`}>
                     <td className="td font-sans text-[14px] font-bold">{h.sym}</td>
                     <td className="td">{fmtShares(h.shares)} sh</td>
                     <td className="td">{money(h.price)}</td>
@@ -114,6 +126,18 @@ export default function OffModelPanel({
                         <button className="btn-sell" onClick={() => onSell(h.id)}>
                           Sell
                         </button>
+                      )}
+                    </td>
+                    <td className="td">
+                      {h.price > 0 ? (
+                        <WhatIfCell
+                          portfolio={portfolio}
+                          stock={offModelAsStock(h)}
+                          onTrade={onTrade}
+                          banded={false}
+                        />
+                      ) : (
+                        <span className="text-[13px] text-ink-soft">needs a price</span>
                       )}
                     </td>
                   </tr>

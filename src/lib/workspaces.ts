@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import { emptyState, sampleState } from './defaultState';
 import { classify } from './import/parse';
-import { ExplorerState } from './types';
+import { ExplorerState, OffModelHolding } from './types';
 
 /**
  * The two workspaces, held outside React so a route change cannot destroy them.
@@ -122,6 +122,21 @@ export function restorable(value: unknown): value is Workspaces {
  * anything, and it never touches a class the tool does not recognise, which is the one case
  * `holdOnly` exists to protect.
  */
+/**
+ * The off-model list with every holding a sale once removed put back, at nothing held.
+ *
+ * Selling an off-model holding used to delete its row. It now keeps it, because the advisor goes
+ * on working from these after trading; a workspace saved before that has the sold ones missing,
+ * and without this they would be gone from the table for good.
+ */
+function withSoldRows(s: ExplorerState): OffModelHolding[] {
+  const held = new Set(s.portfolio.offModel.map((h) => h.id));
+  const sold = (s.baseline.offModel ?? [])
+    .filter((h) => !held.has(h.id))
+    .map((h) => ({ ...h, shares: 0 }));
+  return sold.length === 0 ? s.portfolio.offModel : [...s.portfolio.offModel, ...sold];
+}
+
 export function migrate(w: Workspaces): Workspaces {
   const fixIncome = (tradeable: boolean | undefined, type: string | undefined) =>
     tradeable === false && classify(type ?? '') === 'fixedIncome';
@@ -130,6 +145,7 @@ export function migrate(w: Workspaces): Workspaces {
     ...s,
     portfolio: {
       ...s.portfolio,
+      offModel: withSoldRows(s),
       stocks: s.portfolio.stocks.map((k) =>
         fixIncome(k.tradeable, k.type) ? { ...k, tradeable: true, lotRounding: false } : k,
       ),

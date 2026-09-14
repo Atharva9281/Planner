@@ -24,6 +24,7 @@ import {
   addStock,
   applyTrade,
   BulkOutcome,
+  canRemoveOffModel,
   clearAll,
   deployByRank,
   OffModelSale,
@@ -34,6 +35,7 @@ import {
   resetStock,
   sellAllOffModel,
   sellOffModel,
+  tradeOffModel,
   setCash,
   setCashBand,
   setOffModelField,
@@ -435,6 +437,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
             sale={sale}
             undoable={log[log.length - 1]?.batch === sale?.batch}
             onSell={(id) => setState((cur) => sellOffModel(cur, id))}
+            onTrade={(id, target) => setState((cur) => tradeOffModel(cur, id, target))}
             onSellAll={handleSellAllOffModel}
             onUndo={handleUndo}
           />
@@ -503,6 +506,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
           }
           onSellOffModel={(id) => setState((cur) => sellOffModel(cur, id))}
           onRemoveOffModel={(id) => setState((cur) => removeOffModel(cur, id))}
+          canRemoveOffModel={(id) => canRemoveOffModel(state, id)}
         />
       )}
 
