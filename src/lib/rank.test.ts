@@ -8,6 +8,7 @@ import {
   cashLimit,
   inRankOrder,
   rankOf,
+  rankTies,
   runBlockers,
   stageShares,
   withinCashLimit,
@@ -121,6 +122,31 @@ describe('what stops the run starting', () => {
     expect(reason).toContain('MU');
     expect(reason).toContain('account total');
     expect(runBlockers(sampleState().portfolio)).toEqual([]);
+  });
+
+  it('refuses while two positions share a rank, and names them', () => {
+    // MU 1, AAPL 2, and MSFT given 1 as well.
+    const state = ranked(['MU', 'AAPL'], (s) => (s.sym === 'MSFT' ? { ...s, rank: 1 } : s));
+    expect(runBlockers(state.portfolio)).toEqual([
+      'Rank 1 is used by MSFT and MU. Each rank can go to only one stock.',
+    ]);
+    expect(runBlockers(ranked(['MU', 'AAPL']).portfolio)).toEqual([]);
+  });
+
+  it('finds every tie, lowest rank first, and ignores unranked rows', () => {
+    const stocks = [
+      { sym: 'A', rank: 7 },
+      { sym: 'B', rank: 5 },
+      { sym: 'C', rank: 7 },
+      { sym: 'D', rank: 5 },
+      { sym: 'E', rank: 5 },
+      { sym: 'F' },
+      { sym: 'G' },
+    ] as Stock[];
+    expect(rankTies(stocks)).toEqual([
+      { rank: 5, syms: ['B', 'D', 'E'] },
+      { rank: 7, syms: ['A', 'C'] },
+    ]);
   });
 
   /** The block is about the account total, which an untraded row is still part of. */

@@ -93,6 +93,39 @@ export function inRankOrder(stocks: Stock[]): Stock[] {
   return stocks.filter(isRanked).sort((a, b) => rankOf(a) - rankOf(b));
 }
 
+/** A place in the order claimed by more than one position, and the tickers claiming it. */
+export interface RankTie {
+  rank: number;
+  syms: string[];
+}
+
+/**
+ * Every rank given to more than one position, lowest first, tickers in model order.
+ *
+ * An error, not a preference. Two positions on the same rank leave the order between them to
+ * however the model file happens to list them, which is not a view anybody took — so a tie blocks
+ * the run until each rank belongs to one stock.
+ */
+export function rankTies(stocks: Stock[]): RankTie[] {
+  const byRank = new Map<number, string[]>();
+  for (const s of stocks.filter(isRanked)) {
+    byRank.set(rankOf(s), [...(byRank.get(rankOf(s)) ?? []), s.sym]);
+  }
+  return [...byRank.entries()]
+    .filter(([, syms]) => syms.length > 1)
+    .sort(([a], [b]) => a - b)
+    .map(([rank, syms]) => ({ rank, syms }));
+}
+
+/** "MU and AMAT", "MU, AMAT and CSX". */
+const listed = (syms: string[]) =>
+  syms.length === 1 ? syms[0] : `${syms.slice(0, -1).join(', ')} and ${syms[syms.length - 1]}`;
+
+/** "Rank 5 is used by MU and AMAT. Each rank can go to only one stock." */
+export function rankTiesMessage(ties: RankTie[]): string {
+  return `${ties.map((t) => `Rank ${t.rank} is used by ${listed(t.syms)}.`).join(' ')} Each rank can go to only one stock.`;
+}
+
 /* ------------------------------------------------------------------ */
 /* how far the cash may fall                                           */
 /* ------------------------------------------------------------------ */
@@ -152,16 +185,23 @@ export function withinCashLimit(p: Portfolio, spend: number, stopAt: StopAt): bo
  * this asks for nothing that was not needed anyway.
  */
 export function runBlockers(p: Portfolio): string[] {
-  const unpriced = p.stocks.filter((s) => isTradeable(s) && s.price <= 0);
-  if (unpriced.length === 0) return [];
+  const reasons: string[] = [];
 
-  return [
-    `${unpriced.length} position${unpriced.length === 1 ? '' : 's'} without a price (${unpriced
-      .map((s) => s.sym)
-      .join(', ')}). Every stage turns a percentage of the account into a share count, and an ` +
-      'unpriced holding is missing from the account total, so every other position would be ' +
-      'traded against a total that is short.',
-  ];
+  const unpriced = p.stocks.filter((s) => isTradeable(s) && s.price <= 0);
+  if (unpriced.length > 0) {
+    reasons.push(
+      `${unpriced.length} position${unpriced.length === 1 ? '' : 's'} without a price (${unpriced
+        .map((s) => s.sym)
+        .join(', ')}). Every stage turns a percentage of the account into a share count, and an ` +
+        'unpriced holding is missing from the account total, so every other position would be ' +
+        'traded against a total that is short.',
+    );
+  }
+
+  const ties = rankTies(p.stocks);
+  if (ties.length > 0) reasons.push(rankTiesMessage(ties));
+
+  return reasons;
 }
 
 /** True when the cash is already at or below where this run would stop. */

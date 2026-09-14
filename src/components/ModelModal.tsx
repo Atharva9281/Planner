@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import Modal from './Modal';
 import { NumInput, SymInput } from './Inputs';
-import { inRankOrder, rankOf } from '@/lib/rank';
+import { inRankOrder, rankOf, rankTies, rankTiesMessage } from '@/lib/rank';
 import { Portfolio, Stock } from '@/lib/types';
 
 type ModelField = 'type' | 'target' | 'bandMin' | 'bandMax';
@@ -35,13 +35,6 @@ function duplicateSymbols(stocks: Stock[]): string[] {
   return [...seen.entries()].filter(([, n]) => n > 1).map(([sym]) => sym);
 }
 
-/** Places claimed by more than one position, which make the run's order arbitrary between them. */
-function duplicateRanks(stocks: Stock[]): number[] {
-  const seen = new Map<number, number>();
-  stocks.filter((s) => rankOf(s) > 0).forEach((s) => seen.set(s.rank!, (seen.get(s.rank!) ?? 0) + 1));
-  return [...seen.entries()].filter(([, n]) => n > 1).map(([rank]) => rank);
-}
-
 export default function ModelModal({
   portfolio,
   onClose,
@@ -56,7 +49,7 @@ export default function ModelModal({
   const targetTotal = portfolio.stocks.reduce((sum, s) => sum + s.target, 0);
   const invalidBand = portfolio.stocks.filter((s) => s.bandMin > s.bandMax);
   const order = inRankOrder(portfolio.stocks);
-  const tiedRanks = duplicateRanks(portfolio.stocks);
+  const ties = rankTies(portfolio.stocks);
 
   /*
    * Narrows the rows to the tickers containing what is typed. Only the rows: the conviction order,
@@ -179,17 +172,26 @@ export default function ModelModal({
               )}
               {shown.map((s) => {
                 const bad = s.bandMin > s.bandMax;
+                const tie = ties.find((t) => t.rank === rankOf(s));
                 return (
                   <tr key={s.id}>
                     <td className={`${TD} w-16`}>
                       <NumInput
                         className={`field text-center ${
-                          rankOf(s) > 0 ? 'border-accent font-bold text-accent' : ''
+                          tie
+                            ? 'border-danger font-bold text-danger'
+                            : rankOf(s) > 0
+                              ? 'border-accent font-bold text-accent'
+                              : ''
                         }`}
                         value={rankOf(s)}
                         blankZero
                         placeholder="—"
-                        title={`Where ${s.sym} sits in the conviction order. 1 is first call on the cash; blank leaves it at its band floor.`}
+                        title={
+                          tie
+                            ? `Rank ${tie.rank} is also used by ${tie.syms.filter((x) => x !== s.sym).join(', ')}. Each rank can go to only one stock.`
+                            : `Where ${s.sym} sits in the conviction order. 1 is first call on the cash; blank leaves it at its band floor.`
+                        }
                         onCommit={(v) => onRank(s.id, v)}
                       />
                     </td>
@@ -267,8 +269,9 @@ export default function ModelModal({
 
         {/* The order read back as a sentence. Twenty rank boxes down a column are hard to read as
             a sequence, and the sequence is the thing being decided — this is the one place it can
-            be checked at a glance before the run acts on it. */}
-        {portfolio.stocks.length > 0 && (
+            be checked at a glance before the run acts on it. Not while ranks are tied: it numbers
+            the run's order 1, 2, 3, so two stocks both ranked 5 would read here as 1 and 2. */}
+        {portfolio.stocks.length > 0 && ties.length === 0 && (
           <p className="mt-3 rounded-lg bg-paper px-3 py-2 text-[13px] leading-relaxed text-ink-soft">
             {order.length === 0 ? (
               <>
@@ -290,11 +293,12 @@ export default function ModelModal({
           </p>
         )}
 
-        {tiedRanks.length > 0 && (
-          <p className="mt-3 rounded-lg bg-warn-soft px-3 py-2 text-[13px] leading-relaxed text-warn">
-            More than one position is ranked {tiedRanks.join(' and ')}. The run works down the list
-            above, so the tie is broken by the order the model happens to list them in — which is
-            not a view you have taken. Give them separate numbers if the difference matters.
+        {ties.length > 0 && (
+          <p
+            role="alert"
+            className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-[13px] font-semibold leading-relaxed text-danger"
+          >
+            {rankTiesMessage(ties)} Deploy by rank is off until they are different.
           </p>
         )}
 
