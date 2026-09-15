@@ -106,6 +106,7 @@ export default function OffModelPanel({
                 <th className="th">Held</th>
                 <th className="th">Price</th>
                 <th className="th">Value</th>
+                <th className="th">% of account</th>
                 <th className="th">Sell</th>
                 <th className="th th-lead w-[260px]">Buy or sell</th>
               </tr>
@@ -119,6 +120,9 @@ export default function OffModelPanel({
                     <td className="td">{fmtShares(h.shares)} sh</td>
                     <td className="td">{money(h.price)}</td>
                     <td className="td tabular-nums">{money(value)}</td>
+                    <td className="td tabular-nums">
+                      {pct(account > 0 ? (value / account) * 100 : 0)}
+                    </td>
                     <td className="td">
                       {value === 0 ? (
                         <span className="text-[13px] text-ink-soft">nothing held</span>
