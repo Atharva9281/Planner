@@ -1,6 +1,6 @@
 import { cashPct, lotRounds, totalValue } from '../engine';
 import { Order } from '../orders';
-import { Portfolio, Stock } from '../types';
+import { LogEntry, Portfolio, Stock } from '../types';
 import { Cell, SheetSpec } from './write';
 
 /**
@@ -202,13 +202,86 @@ export function contextSheet(
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* the steps                                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The session as it happened, one row per step, in the order they were taken — the table under
+ * "Every step, in the order it was taken", as a workbook.
+ *
+ * A separate file from the orders, and deliberately so. The orders are what leaves the building;
+ * this is for laying one run beside another and seeing where they part, which is a question about
+ * the sequence and so needs the sequence, cancelled-out steps and all.
+ *
+ * Unlike the orders sheet it does carry a running cash balance, because here there *is* an order
+ * of execution: each step was applied to the balance the one before it left. `Cash % after` is the
+ * figure stored when the step was taken; the note judges it against the band as it stands now,
+ * which is what the screen does.
+ */
+export const STEP_HEADERS = [
+  '#',
+  'Action',
+  'Symbol',
+  'Shares',
+  'Price',
+  'Amount',
+  'Ends at',
+  'Cash after',
+  'Cash % after',
+  'What it was',
+  'Note',
+] as const;
+
+const STEP_WIDTHS = [6, 9, 10, 12, 12, 15, 12, 16, 13, 52, 36];
+
+/** The warnings the screen prints under a step's description, in the same words. */
+function stepNote(e: LogEntry, portfolio: Portfolio): string {
+  return [
+    e.partial && 'Partial fill: cash ran out before the full amount could be bought.',
+    e.pctAfter > portfolio.cashCeiling && `Left cash above the ${portfolio.cashCeiling}% ceiling.`,
+    e.pctAfter < portfolio.cashFloor && `Left cash below the ${portfolio.cashFloor}% floor.`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+export function stepsSheet(log: LogEntry[], portfolio: Portfolio): SheetSpec {
+  const rows: Cell[][] = [STEP_HEADERS.map((h) => ({ value: h, format: 'header' as const }))];
+
+  log.forEach((e, i) => {
+    rows.push([
+      num(i + 1),
+      text(e.action),
+      text(e.sym),
+      num(e.shares),
+      money(e.price),
+      // Signed the way the orders sheet signs it, so the column sums to what the steps did to cash.
+      money(e.action === 'BUY' ? -e.amount : e.amount),
+      num(e.resultShares),
+      money(e.cashAfter),
+      percent(e.pctAfter),
+      text(e.label),
+      text(stepNote(e, portfolio)),
+    ]);
+  });
+
+  return { name: 'Steps', columns: STEP_WIDTHS, rows };
+}
+
+const fileSlug = (label: string) =>
+  label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'portfolio';
+
 /** `orders-john-and-jane-doe-2026-08-31.xlsx` */
 export function tradeLogFilename(label: string, at: Date): string {
-  const slug =
-    label
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 48) || 'portfolio';
-  return `orders-${slug}-${at.toISOString().slice(0, 10)}.xlsx`;
+  return `orders-${fileSlug(label)}-${at.toISOString().slice(0, 10)}.xlsx`;
+}
+
+/** `steps-john-and-jane-doe-2026-08-31.xlsx` */
+export function stepsFilename(label: string, at: Date): string {
+  return `steps-${fileSlug(label)}-${at.toISOString().slice(0, 10)}.xlsx`;
 }

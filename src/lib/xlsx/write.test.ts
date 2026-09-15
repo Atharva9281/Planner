@@ -5,8 +5,16 @@ import { sampleState } from '../defaultState';
 import { cashPct, planToBandEdge, planToTarget, totalValue } from '../engine';
 import { orderSummary } from '../orders';
 import { ExplorerState } from '../types';
-import { contextSheet, ordersSheet, tradeLogFilename, ORDER_HEADERS } from './tradeLog';
-import { buildXlsx, columnName, safeSheetName } from './write';
+import {
+  contextSheet,
+  ordersSheet,
+  stepsFilename,
+  stepsSheet,
+  tradeLogFilename,
+  ORDER_HEADERS,
+  STEP_HEADERS,
+} from './tradeLog';
+import { buildXlsx, Cell, columnName, safeSheetName } from './write';
 
 /** Unzips a built workbook so the parts can be asserted on directly. */
 const parts = (bytes: Uint8Array) => {
@@ -293,6 +301,74 @@ describe('the orders sheet', () => {
   });
 });
 
+describe('the steps sheet', () => {
+  const stepsXml = (s: ExplorerState) =>
+    parts(buildXlsx([stepsSheet(s.log, s.portfolio)]))['xl/worksheets/sheet1.xml'];
+
+  const at = (row: Cell[], header: (typeof STEP_HEADERS)[number]) =>
+    row[STEP_HEADERS.indexOf(header)].value;
+
+  it('writes one row per step, in the order taken, as the screen lists them', () => {
+    const state = traded();
+    const xml = stepsXml(state);
+
+    expect(rowValues(xml, 1)).toEqual([...STEP_HEADERS]);
+    state.log.forEach((e, i) => {
+      const row = rowValues(xml, 2 + i);
+      expect(row[0]).toBe(String(i + 1));
+      expect(row[1]).toBe(e.action);
+      expect(row[2]).toBe(e.sym);
+      expect(row[9]).toBe(e.label);
+    });
+    expect(stepsSheet(state.log, state.portfolio).rows).toHaveLength(1 + state.log.length);
+  });
+
+  /** The reason it exists beside the orders sheet: nothing that cancelled out is dropped. */
+  it('keeps a step that a later one took back', () => {
+    let s = sampleState();
+    const mu = () => s.portfolio.stocks.find((x) => x.sym === 'MU')!;
+    for (const edge of ['high', 'low'] as const) {
+      const plan = planToBandEdge(s.portfolio, mu(), edge);
+      if (plan) s = applyTrade(s, plan);
+    }
+
+    const rows = stepsSheet(s.log, s.portfolio).rows;
+    expect(rows.filter((r) => at(r, 'Symbol') === 'MU')).toHaveLength(s.log.length);
+    expect(s.log.length).toBeGreaterThan(orderSummary(s).orders.length);
+  });
+
+  it('signs the amount, and carries the running cash each step left behind', () => {
+    const state = traded();
+    const rows = stepsSheet(state.log, state.portfolio).rows;
+
+    state.log.forEach((e, i) => {
+      const row = rows[1 + i];
+      expect(at(row, 'Amount')).toBeCloseTo(e.action === 'BUY' ? -e.amount : e.amount, 6);
+      expect(at(row, 'Ends at')).toBe(e.resultShares);
+      expect(at(row, 'Cash after')).toBe(e.cashAfter);
+      expect(at(row, 'Cash % after')).toBe(e.pctAfter);
+    });
+
+    // The amounts sum to what the steps did to the balance.
+    const summed = rows.slice(1).reduce((t, r) => t + (at(r, 'Amount') as number), 0);
+    expect(summed).toBeCloseTo(state.portfolio.cash - state.baseline.cash, 6);
+  });
+
+  it('writes figures as numbers so the columns sum', () => {
+    const row = rowValues(stepsXml(traded()), 2);
+    for (const i of [0, 3, 4, 5, 6, 7, 8]) expect(row[i]).toMatch(/^-?\d+(\.\d+)?$/);
+  });
+
+  it('flags a step that left cash outside its band, in the words the screen uses', () => {
+    const state = traded();
+    const p = { ...state.portfolio, cashFloor: 0, cashCeiling: 0 };
+    const rows = stepsSheet(state.log, p).rows;
+
+    expect(at(rows[1], 'Note')).toBe('Left cash above the 0% ceiling.');
+    expect(at(stepsSheet(state.log, { ...p, cashCeiling: 100 }).rows[1], 'Note')).toBe('');
+  });
+});
+
 describe('the account sheet', () => {
   it('records what every figure was measured against', () => {
     const state = traded();
@@ -325,5 +401,10 @@ describe('the filename', () => {
       'orders-a004nr-sleeve-growth-income-2026-08-31.xlsx',
     );
     expect(tradeLogFilename('', at)).toBe('orders-portfolio-2026-08-31.xlsx');
+  });
+
+  it('names the steps file apart from the orders file', () => {
+    const at = new Date('2026-08-31T18:20:00Z');
+    expect(stepsFilename('John and Jane Doe', at)).toBe('steps-john-and-jane-doe-2026-08-31.xlsx');
   });
 });

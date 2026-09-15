@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { cashPct } from '@/lib/engine';
 import { orderSummary } from '@/lib/orders';
 import { money, pct, shares as fmtShares } from '@/lib/format';
-import { ExplorerState, LogEntry, Portfolio } from '@/lib/types';
+import { ExplorerState } from '@/lib/types';
+import { downloadSteps } from '@/lib/xlsx/download';
 
 /**
  * What has to be traded, with the clicking that produced it folded away behind a toggle.
@@ -137,7 +138,7 @@ export default function Orders({ state }: { state: ExplorerState }) {
         )}
       </div>
 
-      {showSteps && <Steps log={state.log} portfolio={state.portfolio} />}
+      {showSteps && <Steps state={state} />}
     </>
   );
 }
@@ -146,17 +147,26 @@ export default function Orders({ state }: { state: ExplorerState }) {
  * The session as it actually happened, oldest first. Secondary by design: this answers "how did
  * we get here", never "what should be traded".
  */
-function Steps({ log, portfolio }: { log: LogEntry[]; portfolio: Portfolio }) {
+function Steps({ state }: { state: ExplorerState }) {
+  const { log, portfolio } = state;
+
   return (
     <div className="border-t border-line">
-      <div className="px-4 pt-4 pb-2">
-        <h3 className="text-[12.5px] font-bold uppercase tracking-[0.05em] text-ink-soft">
-          Every step, in the order it was taken
-        </h3>
-        <p className="mt-1 max-w-[64rem] text-[13px] leading-relaxed text-ink-soft">
-          Exploration, not instruction. Steps that cancel out are still here, and are deliberately
-          absent from the orders above.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 pt-4 pb-2">
+        <div className="min-w-0">
+          <h3 className="text-[12.5px] font-bold uppercase tracking-[0.05em] text-ink-soft">
+            Every step, in the order it was taken
+          </h3>
+          <p className="mt-1 max-w-[64rem] text-[13px] leading-relaxed text-ink-soft">
+            Exploration, not instruction. Steps that cancel out are still here, and are deliberately
+            absent from the orders above.
+          </p>
+        </div>
+        {/* Its own file, beside the table it copies, so it is never mistaken for the orders
+            export in the panel header. */}
+        <button className="btn-outline shrink-0" onClick={() => downloadSteps(state)}>
+          Download steps as Excel
+        </button>
       </div>
 
       <table className="w-full border-collapse">
@@ -188,9 +198,9 @@ function Steps({ log, portfolio }: { log: LogEntry[]; portfolio: Portfolio }) {
               <td className="td font-sans text-[14px] font-bold">{e.sym}</td>
               <td className="td text-right">{fmtShares(e.shares)}</td>
               <td className="td text-right">{money(e.amount)}</td>
-              <td className="td text-right">
-                {e.source === 'model' ? `${fmtShares(e.resultShares)} sh` : '0 sh'}
-              </td>
+              {/* Off-model rows included: they can be traded to any amount now, not only sold out,
+                  and a sale from before that always recorded nothing left. */}
+              <td className="td text-right">{fmtShares(e.resultShares)} sh</td>
               <td className="td text-right text-ink-soft">{money(e.cashAfter)}</td>
               <td className="td text-[13px] whitespace-normal text-ink-soft">
                 {e.label}
