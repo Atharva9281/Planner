@@ -139,6 +139,36 @@ describe('off-model holdings', () => {
     expect(totalValue(state.portfolio)).toBeCloseTo(562871.5 + 5000, 6);
   });
 
+  it('adds a holding entered on the page with its ticker, shares and price', () => {
+    const state = addOffModel(sampleState(), { sym: ' nvda ', shares: 250, price: 182.4 });
+
+    expect(state.portfolio.offModel).toEqual([
+      { id: expect.any(String), sym: 'NVDA', shares: 250, price: 182.4 },
+    ]);
+    // The holding was already owned, so it moves the starting position rather than trading.
+    expect(state.baseline.offModel).toEqual(state.portfolio.offModel);
+    expect(state.log).toHaveLength(0);
+    expect(totalValue(state.portfolio)).toBeCloseTo(562871.5 + 45600, 6);
+  });
+
+  it('takes a priced ticker at no shares, for buying into afterwards', () => {
+    const state = addOffModel(sampleState(), { sym: 'TSLA', shares: 0, price: 410 });
+
+    expect(state.portfolio.offModel[0]).toMatchObject({ sym: 'TSLA', shares: 0, price: 410 });
+    expect(totalValue(state.portfolio)).toBeCloseTo(562871.5, 6);
+
+    // Part-filled, like every other per-row buy: 100 sh at $410 is more than the $38,000 of cash.
+    const bought = tradeOffModel(state, state.portfolio.offModel[0].id, 100);
+    expect(bought.portfolio.offModel[0].shares).toBe(92);
+    expect(bought.portfolio.cash).toBeCloseTo(38000 - 92 * 410, 6);
+    expect(bought.log[0]).toMatchObject({
+      source: 'offModel',
+      sym: 'TSLA',
+      action: 'BUY',
+      partial: true,
+    });
+  });
+
   it('sells entirely and adds the proceeds to cash, keeping the row at nothing held', () => {
     const state = withOther(100, 50);
     const after = sellOffModel(state, state.portfolio.offModel[0].id);

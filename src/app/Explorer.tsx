@@ -440,6 +440,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
             onTrade={(id, target) => setState((cur) => tradeOffModel(cur, id, target))}
             onSellAll={handleSellAllOffModel}
             onUndo={handleUndo}
+            onAdd={(holding) => setState((cur) => addOffModel(cur, holding))}
           />
 
           <Panel

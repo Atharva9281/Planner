@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import Panel from './Panel';
 import WhatIfCell from './WhatIfCell';
+import { dropFocusOnWheel } from './Inputs';
 import { OffModelSale } from '@/lib/actions';
 import { offModelAsStock, offModelValue, totalValue } from '@/lib/engine';
 import { money, pct, shares as fmtShares } from '@/lib/format';
@@ -26,6 +28,14 @@ import { Portfolio } from '@/lib/types';
  * The advisor keeps working from this table after trading on it, so a row stays whatever is left
  * of the holding — sold out included — and each one takes the same Calculate box as a model row,
  * to buy or sell any amount. Sell and Sell all stay as the one-click way to clear them.
+ *
+ * The last row of the table adds a holding: ticker, shares and price typed together, on the page
+ * rather than inside a dialog. A custodian export is a statement of one account at one moment, so
+ * anything bought since, held elsewhere, or simply missed has to be enterable where the table is
+ * being read. The price is asked for with the ticker because nothing here can be valued without
+ * one — and an unpriced row would count as nothing toward the account total every band is a
+ * percentage of. Shares may be left empty: a row entered at 0 sh is a priced ticker to buy into
+ * with the Calculate box beside it.
  */
 export default function OffModelPanel({
   portfolio,
@@ -34,6 +44,7 @@ export default function OffModelPanel({
   onTrade,
   onSellAll,
   onUndo,
+  onAdd,
   undoable,
 }: {
   portfolio: Portfolio;
@@ -44,20 +55,53 @@ export default function OffModelPanel({
   onTrade: (id: string, targetShares: number) => void;
   onSellAll: () => void;
   onUndo: () => void;
+  /** A new holding, from the add row at the foot of the table. */
+  onAdd: (holding: { sym: string; shares: number; price: number }) => void;
   undoable: boolean;
 }) {
   const holdings = portfolio.offModel;
-  if (holdings.length === 0) return null;
-
   const total = holdings.reduce((n, h) => n + offModelValue(h), 0);
   const account = totalValue(portfolio);
   const sellable = holdings.filter((h) => offModelValue(h) > 0);
+
+  const [newSym, setNewSym] = useState('');
+  const [newShares, setNewShares] = useState('');
+  const [newPrice, setNewPrice] = useState('');
+
+  const ticker = newSym.trim().toUpperCase();
+  const price = Math.max(0, Number(newPrice) || 0);
+  const count = Math.max(0, Number(newShares) || 0);
+  /* A ticker and a price. Shares are optional, and a price of nothing is not a price. */
+  const ready = ticker !== '' && price > 0;
+  const addedValue = count * price;
+  /* Stated, not prevented. The same symbol in both lists is usually a mistake, but it is also how
+     a position half in the model and half out of it is described, so the row is still allowed. */
+  const clash =
+    ticker !== '' &&
+    [...portfolio.stocks, ...holdings].some((x) => x.sym.toUpperCase() === ticker);
+
+  const add = () => {
+    if (!ready) return;
+    onAdd({ sym: ticker, shares: count, price });
+    setNewSym('');
+    setNewShares('');
+    setNewPrice('');
+  };
+
+  /** Enter commits the row from any of its three boxes, so it is typed straight through. */
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') add();
+  };
 
   return (
     <div className="mb-4">
       <Panel
         title="Held, but not in the model"
-        summary={`${holdings.length} holding${holdings.length === 1 ? '' : 's'} · ${money(total)}`}
+        summary={
+          holdings.length === 0
+            ? 'Nothing yet'
+            : `${holdings.length} holding${holdings.length === 1 ? '' : 's'} · ${money(total)}`
+        }
         actions={
           sellable.length > 0 ? (
             <button
@@ -90,9 +134,19 @@ export default function OffModelPanel({
         )}
 
         <div className="px-4 pb-1 text-[13.5px] leading-relaxed text-ink-soft">
-          {money(total)} — <b className="text-ink">{pct((total / account) * 100)}</b> of the
-          account. This counts toward the total every band is measured against, so selling it
-          moves the dollar width of every band in the table above.
+          {holdings.length === 0 ? (
+            <>
+              Nothing here. Anything the account holds outside the model goes in this list — add it
+              at the foot of the table, with the price it is worth today.
+            </>
+          ) : (
+            <>
+              {money(total)} —{' '}
+              <b className="text-ink">{pct(account > 0 ? (total / account) * 100 : 0)}</b> of the
+              account. This counts toward the total every band is measured against, so selling it
+              moves the dollar width of every band in the table above.
+            </>
+          )}
         </div>
 
         {/* `table-stick`, the same as the positions table, so the column names follow the page
@@ -147,6 +201,88 @@ export default function OffModelPanel({
                   </tr>
                 );
               })}
+
+              {/* The add row keeps the table's own columns, so what is being typed lines up under
+                  the heading that names it and the value it will carry is priced as it is typed. */}
+              <tr className={holdings.length % 2 ? 'bg-panel-alt' : 'bg-panel'}>
+                {/* Boxed to their own width rather than the column's: with no rows above them
+                    the three fields would each stretch to a third of the table. */}
+                <td className="td border-t border-line">
+                  <div className="max-w-[8rem]">
+                    <input
+                      className="field font-sans text-[14px] font-bold uppercase
+                                 placeholder:font-normal placeholder:normal-case"
+                      placeholder="Ticker"
+                      aria-label="Ticker of the holding to add"
+                      value={newSym}
+                      onChange={(e) => setNewSym(e.target.value)}
+                      onKeyDown={onKeyDown}
+                    />
+                  </div>
+                </td>
+                <td className="td border-t border-line">
+                  <div className="max-w-[9rem]">
+                    <input
+                      type="number"
+                      min="0"
+                      className="field text-right"
+                      placeholder="Shares"
+                      aria-label="Shares held"
+                      value={newShares}
+                      onChange={(e) => setNewShares(e.target.value)}
+                      onWheel={dropFocusOnWheel}
+                      onKeyDown={onKeyDown}
+                    />
+                  </div>
+                </td>
+                <td className="td border-t border-line">
+                  <div className="max-w-[9rem]">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="field text-right"
+                      placeholder="Price"
+                      aria-label="Price per share"
+                      value={newPrice}
+                      onChange={(e) => setNewPrice(e.target.value)}
+                      onWheel={dropFocusOnWheel}
+                      onKeyDown={onKeyDown}
+                    />
+                  </div>
+                </td>
+                <td className="td tabular-nums border-t border-line">
+                  {ready ? money(addedValue) : <span className="text-ink-soft">—</span>}
+                </td>
+                {/* Against what the account would total once this is in it, since adding a holding
+                    adds its value to that total. */}
+                <td className="td tabular-nums border-t border-line">
+                  {ready && addedValue > 0 ? (
+                    pct((addedValue / (account + addedValue)) * 100)
+                  ) : (
+                    <span className="text-ink-soft">—</span>
+                  )}
+                </td>
+                <td className="td border-t border-line" />
+                <td className="td border-t border-line">
+                  <button className="btn-chip disabled:opacity-45" disabled={!ready} onClick={add}>
+                    + Add holding
+                  </button>
+                  <span className={`sub ${ready && clash ? 'font-semibold text-warn' : ''}`}>
+                    {ticker === '' && price === 0
+                      ? 'Ticker and price. Shares can wait.'
+                      : !ready
+                        ? ticker === ''
+                          ? 'Needs a ticker.'
+                          : 'Needs a price.'
+                        : clash
+                          ? `${ticker} is already held. This adds a second, separate row.`
+                          : count === 0
+                            ? `Adds ${ticker} at 0 sh, ready to buy.`
+                            : `Adds ${ticker}, ${fmtShares(count)} sh at ${money(price)}.`}
+                  </span>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>

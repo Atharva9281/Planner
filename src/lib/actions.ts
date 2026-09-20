@@ -857,12 +857,23 @@ export function removeStock(state: ExplorerState, id: string): ExplorerState {
 const startingOffModel = (state: ExplorerState): OffModelHolding[] =>
   state.baseline.offModel ?? state.portfolio.offModel;
 
-export function addOffModel(state: ExplorerState): ExplorerState {
+/**
+ * `seed` is what the advisor typed into the add row under the off-model table: a real ticker at a
+ * real price, entered together, because a holding is only worth adding once it can be valued.
+ *
+ * Without one — the "+ Add holding" button inside Edit starting holdings — the row arrives as a
+ * placeholder to be typed over, which is why the symbol and price are the obviously-wrong OTHER
+ * and 100 rather than anything that could pass for market data.
+ */
+export function addOffModel(
+  state: ExplorerState,
+  seed?: { sym: string; shares: number; price: number },
+): ExplorerState {
   const holding: OffModelHolding = {
     id: `o${state.nextId}`,
-    sym: 'OTHER',
-    shares: 0,
-    price: 100,
+    sym: seed?.sym.trim().toUpperCase() || 'OTHER',
+    shares: Math.max(0, seed?.shares ?? 0),
+    price: Math.max(0, seed?.price ?? 100),
   };
   return {
     ...state,
