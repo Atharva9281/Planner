@@ -3,7 +3,7 @@ import Panel from './Panel';
 import WhatIfCell from './WhatIfCell';
 import { dropFocusOnWheel } from './Inputs';
 import { OffModelSale } from '@/lib/actions';
-import { offModelAsStock, offModelValue, totalValue } from '@/lib/engine';
+import { affordableShares, offModelAsStock, offModelValue, totalValue } from '@/lib/engine';
 import { money, pct, shares as fmtShares } from '@/lib/format';
 import { Portfolio } from '@/lib/types';
 
@@ -29,13 +29,11 @@ import { Portfolio } from '@/lib/types';
  * of the holding — sold out included — and each one takes the same Calculate box as a model row,
  * to buy or sell any amount. Sell and Sell all stay as the one-click way to clear them.
  *
- * The last row of the table adds a holding: ticker, shares and price typed together, on the page
- * rather than inside a dialog. A custodian export is a statement of one account at one moment, so
- * anything bought since, held elsewhere, or simply missed has to be enterable where the table is
- * being read. The price is asked for with the ticker because nothing here can be valued without
- * one — and an unpriced row would count as nothing toward the account total every band is a
- * percentage of. Shares may be left empty: a row entered at 0 sh is a priced ticker to buy into
- * with the Calculate box beside it.
+ * The last row of the table buys a new holding: ticker, shares and price typed together, paid for
+ * out of cash and clamped to it like every one-row buy. It is a trade, so it goes on the log:
+ * Undo takes the row away with the cash it spent, and a reset drops it. A holding the account
+ * already owns but the export missed belongs in the Current holdings dialog instead, which edits
+ * the starting position without moving cash.
  */
 export default function OffModelPanel({
   portfolio,
@@ -55,7 +53,7 @@ export default function OffModelPanel({
   onTrade: (id: string, targetShares: number) => void;
   onSellAll: () => void;
   onUndo: () => void;
-  /** A new holding, from the add row at the foot of the table. */
+  /** A new holding, bought from the add row at the foot of the table. */
   onAdd: (holding: { sym: string; shares: number; price: number }) => void;
   undoable: boolean;
 }) {
@@ -70,10 +68,20 @@ export default function OffModelPanel({
 
   const ticker = newSym.trim().toUpperCase();
   const price = Math.max(0, Number(newPrice) || 0);
-  const count = Math.max(0, Number(newShares) || 0);
-  /* A ticker and a price. Shares are optional, and a price of nothing is not a price. */
-  const ready = ticker !== '' && price > 0;
-  const addedValue = count * price;
+  const count = Math.max(0, Math.floor(Number(newShares) || 0));
+  /* What the cash pays for, since the add is a buy and is clamped to it like any other one-row buy.
+     Priced as a holding of nothing, so the arithmetic is the same `whatIf` the trade will run. */
+  const covered =
+    price > 0
+      ? Math.min(
+          count,
+          affordableShares(portfolio, offModelAsStock({ id: '', sym: ticker, shares: 0, price })),
+        )
+      : 0;
+  /* A ticker, some shares and a price, and enough cash for at least one of them. A row with no
+     trade behind it could not be undone, so nothing is added unless something is bought. */
+  const ready = ticker !== '' && price > 0 && count > 0 && covered > 0;
+  const addedValue = covered * price;
   /* Stated, not prevented. The same symbol in both lists is usually a mistake, but it is also how
      a position half in the model and half out of it is described, so the row is still allowed. */
   const clash =
@@ -253,11 +261,10 @@ export default function OffModelPanel({
                 <td className="td tabular-nums border-t border-line">
                   {ready ? money(addedValue) : <span className="text-ink-soft">—</span>}
                 </td>
-                {/* Against what the account would total once this is in it, since adding a holding
-                    adds its value to that total. */}
+                {/* A buy swaps cash for shares, so the account total it is a share of does not move. */}
                 <td className="td tabular-nums border-t border-line">
-                  {ready && addedValue > 0 ? (
-                    pct((addedValue / (account + addedValue)) * 100)
+                  {ready && account > 0 ? (
+                    pct((addedValue / account) * 100)
                   ) : (
                     <span className="text-ink-soft">—</span>
                   )}
@@ -268,17 +275,21 @@ export default function OffModelPanel({
                     + Add holding
                   </button>
                   <span className={`sub ${ready && clash ? 'font-semibold text-warn' : ''}`}>
-                    {ticker === '' && price === 0
-                      ? 'Ticker and price. Shares can wait.'
-                      : !ready
-                        ? ticker === ''
-                          ? 'Needs a ticker.'
-                          : 'Needs a price.'
-                        : clash
-                          ? `${ticker} is already held. This adds a second, separate row.`
-                          : count === 0
-                            ? `Adds ${ticker} at 0 sh, ready to buy.`
-                            : `Adds ${ticker}, ${fmtShares(count)} sh at ${money(price)}.`}
+                    {ticker === '' && price === 0 && count === 0
+                      ? 'Ticker, shares and price.'
+                      : ticker === ''
+                        ? 'Needs a ticker.'
+                        : count === 0
+                          ? 'Needs shares.'
+                          : price === 0
+                            ? 'Needs a price.'
+                            : covered === 0
+                              ? 'Not enough cash to buy any.'
+                              : clash
+                                ? `${ticker} is already held. This adds a second, separate row.`
+                                : covered < count
+                                  ? `Cash covers ${fmtShares(covered)} of ${fmtShares(count)} sh, for ${money(addedValue)}.`
+                                  : `Buys ${fmtShares(count)} sh of ${ticker} for ${money(addedValue)}.`}
                   </span>
                 </td>
               </tr>

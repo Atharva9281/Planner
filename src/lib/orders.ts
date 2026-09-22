@@ -90,6 +90,15 @@ export function netOrders(state: ExplorerState): Order[] {
     orders.push(offModelOrder(current ?? opening, opening.shares, resulting));
   }
 
+  /* And holdings bought from the add row under the table, which the starting position never had:
+     everything they hold now was bought. Not on a workspace saved before the baseline recorded
+     off-model holdings at all, where every row would otherwise read as bought. */
+  const opening = new Set((state.baseline.offModel ?? []).map((h) => h.id));
+  for (const h of state.baseline.offModel ? state.portfolio.offModel : []) {
+    if (opening.has(h.id) || h.shares === 0) continue;
+    orders.push(offModelOrder(h, 0, h.shares));
+  }
+
   return orders;
 }
 

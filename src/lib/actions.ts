@@ -164,6 +164,46 @@ export function tradeOffModel(
   return { ...state, portfolio, log: [...state.log, entry], nextId: state.nextId + 1 };
 }
 
+/**
+ * A holding bought from the add row under the off-model table: a new row, and a buy of the shares
+ * typed, paid for out of cash.
+ *
+ * It is a trade, not a correction to the starting position — that is what the Current holdings
+ * dialog is for. So the row is not in the baseline, and it is on the log as its opening buy:
+ * Undo takes away the row with the cash it spent, and a reset, which returns to the starting
+ * position, drops it. Clamped to the cash like every other one-row buy, and when the cash covers
+ * none of it nothing is added at all, since a row with no trade behind it could not be undone.
+ */
+export function buyNewOffModel(
+  state: ExplorerState,
+  seed: { sym: string; shares: number; price: number },
+): ExplorerState {
+  const id = `o${state.nextId}`;
+  const holding: OffModelHolding = {
+    id,
+    sym: seed.sym.trim().toUpperCase(),
+    shares: 0,
+    price: Math.max(0, seed.price),
+  };
+  const opened: ExplorerState = {
+    ...state,
+    portfolio: { ...state.portfolio, offModel: [...state.portfolio.offModel, holding] },
+    nextId: state.nextId + 1,
+  };
+
+  const bought = tradeOffModel(opened, id, seed.shares);
+  if (bought === opened) return state;
+
+  const entry = bought.log[bought.log.length - 1];
+  return {
+    ...bought,
+    log: [
+      ...bought.log.slice(0, -1),
+      { ...entry, opened: true, label: 'not part of the model, added and bought here' },
+    ],
+  };
+}
+
 /** Sells an off-model holding in full. Its row stays, at nothing held. */
 export const sellOffModel = (state: ExplorerState, id: string, batch?: string): ExplorerState =>
   tradeOffModel(state, id, 0, batch);
@@ -622,6 +662,11 @@ function undoOne(state: ExplorerState): ExplorerState {
   if (entry.source === 'offModel') {
     const id = entry.offModelId ?? entry.restore?.id;
     const cash = entry.action === 'SELL' ? p.cash - entry.amount : p.cash + entry.amount;
+    // The buy that added the row: taking it back takes the row with it.
+    if (entry.opened) {
+      const offModel = p.offModel.filter((h) => h.id !== id);
+      return { ...state, portfolio: { ...p, cash, offModel }, log };
+    }
     /* A sale from before sold rows kept their place removed the row, and the workspace migration
        puts it back at nothing held — so the row is normally there to adjust. The append is for the
        case it is not. */
@@ -698,11 +743,14 @@ export function resetAll(state: ExplorerState): ExplorerState {
       })),
       /* Sold off-model holdings come back too. Restoring the cash without them took the sale
          proceeds away and left nothing in their place, so the account lost that value outright
-         with no trade behind it — a reset is meant to undo work, not destroy it.
-         `?? current` covers a workspace saved before the baseline recorded them. */
+         with no trade behind it — a reset is meant to undo work, not destroy it. Holdings bought
+         from the add row were never in the starting position, so they go.
+         The fallback covers a workspace saved before the baseline recorded them. */
       offModel: state.baseline.offModel
         ? state.baseline.offModel.map((h) => ({ ...h }))
-        : state.portfolio.offModel,
+        : state.portfolio.offModel.filter(
+            (h) => !state.log.some((e) => e.opened && e.offModelId === h.id),
+          ),
     },
     log: [],
   };
@@ -858,22 +906,19 @@ const startingOffModel = (state: ExplorerState): OffModelHolding[] =>
   state.baseline.offModel ?? state.portfolio.offModel;
 
 /**
- * `seed` is what the advisor typed into the add row under the off-model table: a real ticker at a
- * real price, entered together, because a holding is only worth adding once it can be valued.
- *
- * Without one — the "+ Add holding" button inside Edit starting holdings — the row arrives as a
+ * The "+ Add holding" button inside the Current holdings dialog: a holding the account already
+ * owns, so it joins the starting position rather than being bought. The row arrives as a
  * placeholder to be typed over, which is why the symbol and price are the obviously-wrong OTHER
  * and 100 rather than anything that could pass for market data.
+ *
+ * The add row under the off-model table buys instead; see `buyNewOffModel`.
  */
-export function addOffModel(
-  state: ExplorerState,
-  seed?: { sym: string; shares: number; price: number },
-): ExplorerState {
+export function addOffModel(state: ExplorerState): ExplorerState {
   const holding: OffModelHolding = {
     id: `o${state.nextId}`,
-    sym: seed?.sym.trim().toUpperCase() || 'OTHER',
-    shares: Math.max(0, seed?.shares ?? 0),
-    price: Math.max(0, seed?.price ?? 100),
+    sym: 'OTHER',
+    shares: 0,
+    price: 100,
   };
   return {
     ...state,

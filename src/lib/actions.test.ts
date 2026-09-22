@@ -4,6 +4,7 @@ import {
   canRemoveOffModel,
   addStock,
   applyTrade,
+  buyNewOffModel,
   clearAll,
   closeAccount,
   loadSample,
@@ -31,6 +32,7 @@ import {
   planToTarget,
   totalValue,
 } from './engine';
+import { netOrders } from './orders';
 import { ExplorerState } from './types';
 
 const stockOf = (state: ExplorerState, sym: string) =>
@@ -139,34 +141,62 @@ describe('off-model holdings', () => {
     expect(totalValue(state.portfolio)).toBeCloseTo(562871.5 + 5000, 6);
   });
 
-  it('adds a holding entered on the page with its ticker, shares and price', () => {
-    const state = addOffModel(sampleState(), { sym: ' nvda ', shares: 250, price: 182.4 });
+  it('buys a holding entered on the page, paying for it out of cash', () => {
+    const state = buyNewOffModel(sampleState(), { sym: ' nvda ', shares: 100, price: 182.4 });
 
     expect(state.portfolio.offModel).toEqual([
-      { id: expect.any(String), sym: 'NVDA', shares: 250, price: 182.4 },
+      { id: expect.any(String), sym: 'NVDA', shares: 100, price: 182.4 },
     ]);
-    // The holding was already owned, so it moves the starting position rather than trading.
-    expect(state.baseline.offModel).toEqual(state.portfolio.offModel);
-    expect(state.log).toHaveLength(0);
-    expect(totalValue(state.portfolio)).toBeCloseTo(562871.5 + 45600, 6);
+    expect(state.portfolio.cash).toBeCloseTo(38000 - 18240, 6);
+    expect(state.log).toEqual([
+      expect.objectContaining({ source: 'offModel', sym: 'NVDA', action: 'BUY', shares: 100, opened: true }),
+    ]);
+    // A trade, not a correction: the starting position never held it, and the total does not move.
+    expect(state.baseline.offModel).toEqual([]);
+    expect(totalValue(state.portfolio)).toBeCloseTo(562871.5, 6);
+    expect(netOrders(state)).toEqual([
+      expect.objectContaining({ sym: 'NVDA', action: 'BUY', shares: 100, openingShares: 0 }),
+    ]);
   });
 
-  it('takes a priced ticker at no shares, for buying into afterwards', () => {
-    const state = addOffModel(sampleState(), { sym: 'TSLA', shares: 0, price: 410 });
-
-    expect(state.portfolio.offModel[0]).toMatchObject({ sym: 'TSLA', shares: 0, price: 410 });
-    expect(totalValue(state.portfolio)).toBeCloseTo(562871.5, 6);
-
+  it('clamps the buy to the cash, and adds nothing the cash cannot buy any of', () => {
     // Part-filled, like every other per-row buy: 100 sh at $410 is more than the $38,000 of cash.
-    const bought = tradeOffModel(state, state.portfolio.offModel[0].id, 100);
+    const bought = buyNewOffModel(sampleState(), { sym: 'TSLA', shares: 100, price: 410 });
     expect(bought.portfolio.offModel[0].shares).toBe(92);
     expect(bought.portfolio.cash).toBeCloseTo(38000 - 92 * 410, 6);
-    expect(bought.log[0]).toMatchObject({
-      source: 'offModel',
-      sym: 'TSLA',
-      action: 'BUY',
-      partial: true,
-    });
+    expect(bought.log[0]).toMatchObject({ sym: 'TSLA', partial: true });
+
+    const broke = setCash(sampleState(), 0);
+    expect(buyNewOffModel(broke, { sym: 'TSLA', shares: 10, price: 410 })).toBe(broke);
+    expect(buyNewOffModel(sampleState(), { sym: 'TSLA', shares: 0, price: 410 }).portfolio.offModel).toEqual([]);
+  });
+
+  it('takes the row away on undo and on reset, with the cash it spent', () => {
+    let state = buyNewOffModel(sampleState(), { sym: 'NVDA', shares: 100, price: 182.4 });
+    const id = state.portfolio.offModel[0].id;
+    state = tradeOffModel(state, id, 150);
+
+    const once = undoLast(state);
+    expect(once.portfolio.offModel[0].shares).toBe(100);
+    const twice = undoLast(once);
+    expect(twice.portfolio.offModel).toEqual([]);
+    expect(twice.portfolio.cash).toBeCloseTo(38000, 6);
+    expect(twice.log).toHaveLength(0);
+
+    const reset = resetAll(state);
+    expect(reset.portfolio.offModel).toEqual([]);
+    expect(reset.portfolio.cash).toBeCloseTo(38000, 6);
+  });
+
+  it('keeps a holding added in the dialog through a reset, since it was already owned', () => {
+    let state = addOffModel(sampleState());
+    const id = state.portfolio.offModel[0].id;
+    state = setOffModelField(setOffModelField(state, id, 'shares', 10), id, 'price', 100);
+    state = buyNewOffModel(state, { sym: 'NVDA', shares: 100, price: 182.4 });
+
+    expect(resetAll(state).portfolio.offModel).toEqual([
+      { id, sym: 'OTHER', shares: 10, price: 100 },
+    ]);
   });
 
   it('sells entirely and adds the proceeds to cash, keeping the row at nothing held', () => {

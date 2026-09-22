@@ -22,6 +22,7 @@ import { RankRunButton, RankRunResult } from '@/components/RankRun';
 import {
   addOffModel,
   addStock,
+  buyNewOffModel,
   applyTrade,
   BulkOutcome,
   canRemoveOffModel,
@@ -478,7 +479,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
             onTrade={(id, target) => setState((cur) => tradeOffModel(cur, id, target))}
             onSellAll={handleSellAllOffModel}
             onUndo={handleUndo}
-            onAdd={(holding) => setState((cur) => addOffModel(cur, holding))}
+            onAdd={(holding) => setState((cur) => buyNewOffModel(cur, holding))}
           />
 
           <Panel
@@ -532,7 +533,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
           onShares={(id, shares) => setState((cur) => setStockShares(cur, id, shares))}
           onPrice={(id, price) => setState((cur) => setStockField(cur, id, 'price', price))}
           onCash={(cash) => setState((cur) => setCash(cur, cash))}
-          onAddOffModel={() => setState(addOffModel)}
+          onAddOffModel={() => setState((cur) => addOffModel(cur))}
           onOffModelField={(id, field, value) =>
             setState((cur) => setOffModelField(cur, id, field, value))
           }

@@ -143,6 +143,12 @@ export interface LogEntry {
    */
   restore?: OffModelHolding;
   /**
+   * Set on the buy that brought an off-model holding into the account from the add row under the
+   * table. The row did not exist before it, so undoing this trade removes the row itself rather
+   * than leaving it at nothing held.
+   */
+  opened?: boolean;
+  /**
    * Set when this trade was one of many made by a single press of a universal button, and shared
    * by every trade that press produced.
    *
