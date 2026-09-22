@@ -97,6 +97,12 @@ export default function Explorer({ slot }: { slot: Slot }) {
    * next account.
    */
   const [stopAt, setStopAt] = useState<StopAt>('floor');
+  /**
+   * The workspace as it stood before each edit made in the Model dialog, newest last, so its Undo
+   * can step back one edit at a time. Emptied when the dialog closes: trades can happen once it
+   * is shut, and restoring a snapshot from before them would quietly take them back too.
+   */
+  const [modelHistory, setModelHistory] = useState<ExplorerState[]>([]);
 
   const { portfolio, baseline, log } = state;
   const isEmpty = portfolio.stocks.length === 0 && portfolio.offModel.length === 0;
@@ -238,6 +244,33 @@ export default function Explorer({ slot }: { slot: Slot }) {
     setSale(null);
     setRun(null);
     setState(undoLast);
+  };
+
+  /**
+   * One edit made in the Model dialog, remembered so the dialog's Undo can take it back.
+   *
+   * `setWorkspace` runs the updater exactly once, synchronously, which is what makes recording the
+   * previous state from inside it safe.
+   */
+  const editModel = (edit: (cur: ExplorerState) => ExplorerState) =>
+    setState((cur) => {
+      const next = edit(cur);
+      // A box committed at the value it already held changed nothing, so there is nothing to undo.
+      if (JSON.stringify(next.portfolio) === JSON.stringify(cur.portfolio)) return cur;
+      setModelHistory((h) => [...h, cur]);
+      return next;
+    });
+
+  const undoModelEdit = () => {
+    const previous = modelHistory[modelHistory.length - 1];
+    if (!previous) return;
+    setModelHistory((h) => h.slice(0, -1));
+    setState(previous);
+  };
+
+  const closeModel = () => {
+    setOpenModal(null);
+    setModelHistory([]);
   };
 
   /** Every result line is about a press that a reset has just thrown away. */
@@ -524,16 +557,14 @@ export default function Explorer({ slot }: { slot: Slot }) {
       {openModal === 'model' && (
         <ModelModal
           portfolio={portfolio}
-          onClose={() => setOpenModal(null)}
-          onField={(id, field, value) => setState((cur) => setStockField(cur, id, field, value))}
-          onRank={(id, rank) => setState((cur) => setStockRank(cur, id, rank))}
-          onAddStock={(sym) => setState((cur) => addStock(cur, sym))}
-          onRemoveStock={(id) => setState((cur) => removeStock(cur, id))}
-          onCashBand={(field, value) => setState((cur) => setCashBand(cur, field, value))}
-          onClearAll={() => {
-            setOpenModal(null);
-            setConfirming('clear');
-          }}
+          onClose={closeModel}
+          onField={(id, field, value) => editModel((cur) => setStockField(cur, id, field, value))}
+          onRank={(id, rank) => editModel((cur) => setStockRank(cur, id, rank))}
+          onAddStock={(sym) => editModel((cur) => addStock(cur, sym))}
+          onRemoveStock={(id) => editModel((cur) => removeStock(cur, id))}
+          onCashBand={(field, value) => editModel((cur) => setCashBand(cur, field, value))}
+          onUndo={undoModelEdit}
+          undoable={modelHistory.length}
         />
       )}
 
@@ -558,8 +589,8 @@ export default function Explorer({ slot }: { slot: Slot }) {
         />
       )}
 
-      {/* The full discard: "Clear the whole portfolio", and "Load different files" on a workspace
-          with no model to carry. Both throw everything away. */}
+      {/* The full discard: "Update files" on a workspace with no model to carry, which throws
+          everything away. */}
       {confirming === 'clear' && (
         <ConfirmDialog
           title="Discard this portfolio?"

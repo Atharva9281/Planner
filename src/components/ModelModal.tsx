@@ -14,7 +14,10 @@ interface Props {
   onAddStock: (sym: string) => void;
   onRemoveStock: (stockId: string) => void;
   onCashBand: (field: 'cashFloor' | 'cashTarget' | 'cashCeiling', value: number) => void;
-  onClearAll: () => void;
+  /** Takes back the last edit made since the dialog opened. */
+  onUndo: () => void;
+  /** How many edits there are to take back. */
+  undoable: number;
 }
 
 /*
@@ -43,7 +46,8 @@ export default function ModelModal({
   onAddStock,
   onRemoveStock,
   onCashBand,
-  onClearAll,
+  onUndo,
+  undoable,
 }: Props) {
   const duplicates = duplicateSymbols(portfolio.stocks);
   const targetTotal = portfolio.stocks.reduce((sum, s) => sum + s.target, 0);
@@ -80,16 +84,11 @@ export default function ModelModal({
       onClose={onClose}
       footer={
         <>
-          {portfolio.stocks.length > 0 ? (
-            <button
-              className="btn-ghost hover:border-danger hover:text-danger"
-              onClick={onClearAll}
-            >
-              Clear the whole portfolio
-            </button>
-          ) : (
-            <span />
-          )}
+          {/* Every edit in this dialog, one at a time, back to how it was when the dialog opened.
+              Trades have their own Undo in the page header; nothing here touches them. */}
+          <button className="btn-outline" disabled={undoable === 0} onClick={onUndo}>
+            Undo
+          </button>
           <button className="btn-solid" onClick={onClose}>
             Done
           </button>
