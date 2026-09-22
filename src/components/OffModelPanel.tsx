@@ -96,7 +96,7 @@ export default function OffModelPanel({
   return (
     <div className="mb-4">
       <Panel
-        title="Held, but not in the model"
+        title="Not In Holdings"
         summary={
           holdings.length === 0
             ? 'Nothing yet'
@@ -143,8 +143,7 @@ export default function OffModelPanel({
             <>
               {money(total)} —{' '}
               <b className="text-ink">{pct(account > 0 ? (total / account) * 100 : 0)}</b> of the
-              account. This counts toward the total every band is measured against, so selling it
-              moves the dollar width of every band in the table above.
+              account.
             </>
           )}
         </div>

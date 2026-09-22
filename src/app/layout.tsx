@@ -15,11 +15,10 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Cash Deployment Explorer, Lot-Aware',
-  description:
-    'Deploy idle cash one decision at a time, with every buy checked against the nearest 100-share lot and the stock’s own drift band.',
+  title: 'Portfolio Optimizer',
+  description: 'Optimizing portfolio allocations to maximize covered call writing.',
   // Safari reads this rather than the manifest when adding to the Dock.
-  appleWebApp: { capable: true, title: 'Cash Explorer', statusBarStyle: 'default' },
+  appleWebApp: { capable: true, title: 'Optimizer', statusBarStyle: 'default' },
 };
 
 /* themeColor belongs to the viewport export, not to metadata, where it has been deprecated since

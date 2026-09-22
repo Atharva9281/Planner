@@ -258,7 +258,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
               the workspace lives above the routes, so leaving this page does not empty it. */}
           <Link href="/" className="inline-block">
             <h1 className="text-[26px] font-bold tracking-[-0.015em] hover:text-accent">
-              Cash Deployment Explorer, Lot-Aware
+              Portfolio Optimizer
             </h1>
           </Link>
 
@@ -311,10 +311,10 @@ export default function Explorer({ slot }: { slot: Slot }) {
               Undo last action{undoDepth > 1 ? ` (${undoDepth} trades)` : ''}
             </button>
             <button className="btn-outline" disabled={log.length === 0} onClick={handleResetAll}>
-              Reset everything to starting state
+              Reset to starting state
             </button>
             <button className="btn-outline" onClick={() => setOpenModal('holdings')}>
-              Edit starting holdings
+              Edit current holdings
             </button>
             <button className="btn-outline" onClick={() => setOpenModal('model')}>
               Edit model &amp; cash band
@@ -328,7 +328,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
                 className="btn-outline"
                 onClick={() => setConfirming(portfolio.stocks.length > 0 ? 'next' : 'clear')}
               >
-                Load different files
+                Update files
               </button>
             )}
           </div>
@@ -371,6 +371,11 @@ export default function Explorer({ slot }: { slot: Slot }) {
           <div className="mb-4">
             <Panel
               title={POSITIONS_TITLE}
+              titleAction={
+                <button className="btn-solid" onClick={() => setOpenModal('model')}>
+                  Click here
+                </button>
+              }
               summary={
                 pending === 0
                   ? `${portfolio.stocks.length} positions · all at target`
@@ -444,7 +449,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
           />
 
           <Panel
-            title="Orders to place"
+            title="Trade log"
             actions={
               <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
                 {/* A disabled button with no reason beside it reads as a broken button. Say what
@@ -480,13 +485,6 @@ export default function Explorer({ slot }: { slot: Slot }) {
               orders.length === 0
                 ? 'nothing to trade'
                 : `${orders.length} order${orders.length === 1 ? '' : 's'}`
-            }
-            description={
-              <p className="mt-2 max-w-[64rem] text-[13.5px] leading-relaxed text-ink-soft">
-                Where each position ends up against where it started, which is what a trading desk
-                acts on. Trying a position and putting it back leaves nothing here, so exploring
-                the table costs nothing. The steps that got you here are one click away.
-              </p>
             }
           >
             <Orders state={state} />

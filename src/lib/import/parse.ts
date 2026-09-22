@@ -258,7 +258,7 @@ function readHoldingsSheet(sheet: SheetGrid, warnings: string[]): ParsedHoldings
 
   if (!cashFound) {
     warnings.push(
-      'No "Cash and Equiv" row was found in the holdings file, so cash starts at $0. Set it under Edit starting holdings.',
+      'No "Cash and Equiv" row was found in the holdings file, so cash starts at $0. Set it under Edit current holdings.',
     );
   }
   if (optionsDropped > 0) {

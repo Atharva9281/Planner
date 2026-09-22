@@ -21,7 +21,7 @@
  */
 export const FOLD = 'hidden wide:table-cell';
 
-export const POSITIONS_TITLE = 'Every position, as share counts it could hold';
+export const POSITIONS_TITLE = 'Update ranked holdings';
 
 export interface PositionColumn {
   label: string;

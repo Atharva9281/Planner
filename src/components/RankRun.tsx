@@ -118,7 +118,7 @@ const NOTHING_RANKED =
   'No position is ranked, so there is nothing for the run to deploy into. Number them under Edit model & cash band — 1 gets first call on the cash.';
 
 const RUN_HINT =
-  'Sells every off-model holding, takes every position to its band floor, then works down the conviction order: lowest lot, target lot, highest lot. A step the cash cannot cover whole is skipped and the next rank gets its turn. One press, one undo.';
+  'Sells every off-model holding, takes every position to its band floor, then works down the order of priority: lowest lot, target lot, highest lot. A step the cash cannot cover whole is skipped and the next rank gets its turn. One press, one undo.';
 
 /**
  * What the run did.

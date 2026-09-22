@@ -7,7 +7,7 @@ import { CarriedModel, ParsedImport } from '@/lib/import/types';
 /**
  * Moving to the next account, from the button that says so.
  *
- * "Load different files" used to open a confirmation about discarding, and the actual file
+ * "Update files" (once "Load different files") used to open a confirmation about discarding, and the actual file
  * picker was two screens away — so the dialog talked about what was being lost and said nothing
  * about what to do next. When one model covers several accounts, the next thing is always the
  * same thing: this account's holdings export. So it is asked for here, in the dialog the button
@@ -16,7 +16,7 @@ import { CarriedModel, ParsedImport } from '@/lib/import/types';
  * What is being replaced is still stated. It is a line in a dialog about loading, rather than the
  * whole of a dialog about discarding.
  *
- * "Start over with both files" is the way out for an account on a different mandate: it throws
+ * "Start over" is the way out for an account on a different mandate: it throws
  * the model away too and returns to the upload screen. Named, rather than left to be discovered
  * as a Remove button on the slot afterwards.
  */
@@ -66,7 +66,7 @@ export default function LoadNextAccount({
   return (
     <Modal title="Load the next account" width="max-w-xl" onClose={onCancel}>
       <div className="rounded-lg border border-line bg-paper px-4 py-3">
-        <p className="text-[13.5px] font-bold">The model stays as it is</p>
+        <p className="text-[13.5px] font-bold">Model remains unchanged</p>
         <p className="mt-0.5 font-mono text-[12.5px] text-ink-soft">
           {carried.model.rows.length} positions
           {band && ` · cash band ${band.floor}–${band.ceiling}%`}
@@ -115,7 +115,7 @@ export default function LoadNextAccount({
           {busy ? 'Reading…' : 'Choose the holdings file'}
         </button>
         <p className="mt-2 text-[12.5px] text-ink-soft">
-          or drop it here &middot; .xlsx or .csv &middot; this account&rsquo;s holdings export
+          or drop it here &middot; .xlsx or .csv
         </p>
       </div>
 
@@ -127,12 +127,12 @@ export default function LoadNextAccount({
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-2.5">
         <button className="btn-outline" onClick={onCancel}>
-          Cancel, keep this work
+          Cancel
         </button>
         {/* The other reason to be here: an account on a different mandate. Wears the sell colour
             because it throws the model away as well, which nothing else on this dialog does. */}
         <button className="btn-danger px-4 py-2.5 text-[13.5px]" onClick={onStartOver}>
-          Start over with both files
+          Start over
         </button>
       </div>
     </Modal>

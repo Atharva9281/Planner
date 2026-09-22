@@ -60,12 +60,10 @@ function row(p: Portfolio, s: Stock) {
     targetShares: Math.round(target.raw),
     target,
     /* The nearest lot inside each edge — or the edge itself where no lot on that side serves the
-       position, which is what `isLot` reports. Null where the lot rule does not apply at all,
-       which is true of anything bought in dollars with fractional shares. */
+       position. Null where the lot rule does not apply at all, which is true of anything bought
+       in dollars with fractional shares. */
     lowerLot: lots ? low.lowestLot : null,
-    lowerIsLot: low.isLot,
     upperLot: lots ? high.highestLot : null,
-    upperIsLot: high.isLot,
     lots,
     /**
      * What any share count on this row comes to as a percentage of the account.
@@ -131,11 +129,9 @@ function Destination({
   held,
   canTrade,
   tone = 'plain',
-  badge,
   onGo,
   goLabel,
   affordable,
-  cash,
   byWeight,
 }: {
   shares: number | null;
@@ -157,12 +153,10 @@ function Destination({
   held: number;
   canTrade: boolean;
   tone?: 'plain' | 'buy' | 'sell';
-  badge?: React.ReactNode;
   onGo?: () => void;
   goLabel?: string;
-  /** Whole shares the cash can pay for, so a buy that outruns it says so before it is pressed. */
+  /** Whole shares the cash can pay for, so a buy it cannot pay for at all is disabled. */
   affordable?: number;
-  cash?: number;
   /** Read the cell in dollars rather than share counts: a bond fund is bought in money. */
   byWeight?: boolean;
 }) {
@@ -197,7 +191,6 @@ function Destination({
 
   const delta = shares - held;
   const action = delta > 0 ? 'BUY' : delta < 0 ? 'SELL' : null;
-  const short = action === 'BUY' && affordable !== undefined && affordable < delta;
 
   /* The figures sit at the top of the cell and the button at the bottom of it, so every button
      across the row lands on one line however much text is above it. */
@@ -210,20 +203,14 @@ function Destination({
           }`}
         >
           {byWeight ? money(shares * price) : `${fmtShares(shares)} sh`}
-        </span>{' '}
-        {badge}
+        </span>
         <span className="sub">{fmtPct(pct)}</span>
         {byWeight && <span className="sub">{fmtShares(shares)} sh</span>}
 
         {action === null ? (
-          <span className="mt-2 block text-ink-soft">already here</span>
+          <span className="mt-2 block text-ink-soft">achieved</span>
         ) : (
-          <>
-            <Move action={action} n={Math.abs(delta)} price={price} byWeight={byWeight} />
-            {short && cash !== undefined && (
-              <span className="sub text-warn">only {fmtShares(affordable!)} sh affordable now</span>
-            )}
-          </>
+          <Move action={action} n={Math.abs(delta)} price={price} byWeight={byWeight} />
         )}
       </div>
 
@@ -603,7 +590,7 @@ export default function LotAwareTable({
                     <span className="font-semibold">{fmtShares(s.shares)} sh</span>
                     {r.mandatory && (
                       <span className="badge ml-2.5 bg-danger-soft text-danger">
-                        {r.mandatory} band
+                        {r.mandatory === 'over' ? 'above' : 'below'} band
                       </span>
                     )}
                   </td>
@@ -722,7 +709,7 @@ export default function LotAwareTable({
                         "over band" alone, so the two now agree. */}
                     {r.mandatory && (
                       <span className="badge mt-2 bg-danger-soft text-danger">
-                        {r.mandatory} band
+                        {r.mandatory === 'over' ? 'above' : 'below'} band
                       </span>
                     )}
                   </td>
@@ -742,7 +729,6 @@ export default function LotAwareTable({
                       held={s.shares}
                       canTrade={canTrade}
                       affordable={r.canAfford}
-                      cash={portfolio.cash}
                       onGo={() => onTradeTo(s.id, r.targetShares)}
                       goLabel="Trade to raw target"
                     />
@@ -767,26 +753,11 @@ export default function LotAwareTable({
                       <Destination
                         shares={r.target.goal}
                         pct={r.pctOf(r.target.goal)}
-                        badge={
-                          <span
-                            className={`badge ${
-                              r.target.isLot ? 'bg-ok-soft text-ok' : 'bg-warn-soft text-warn'
-                            }`}
-                            title={
-                              r.target.pushed
-                                ? `The nearest lot to the ${s.target}% target does not fit the ${s.bandMin}–${s.bandMax}% band, so this is the nearest one that does. It lands at ${fmtPct(r.pctOf(r.target.goal))}.`
-                                : undefined
-                            }
-                          >
-                            {r.target.isLot ? 'LOT' : 'raw'}
-                          </span>
-                        }
                         price={s.price}
                         held={s.shares}
                         canTrade={canTrade}
                         affordable={r.canAfford}
-                        cash={portfolio.cash}
-                        onGo={() => onTarget(s.id)}
+                          onGo={() => onTarget(s.id)}
                         goLabel="Adjust to target"
                       />
                     )}
@@ -806,7 +777,6 @@ export default function LotAwareTable({
                       canTrade={canTrade}
                       tone="sell"
                       affordable={r.canAfford}
-                      cash={portfolio.cash}
                       onGo={() => onEdge(s.id, 'low')}
                       goLabel="Trade to the floor"
                     />
@@ -818,23 +788,10 @@ export default function LotAwareTable({
                     <Destination
                       shares={r.lowerLot}
                       pct={r.pctOf(r.lowerLot ?? 0)}
-                      /* Where no lot serves this side, the figure is the floor itself. Badged, or
-                         a plain share count sits under a heading promising a lot. */
-                      badge={
-                        r.lowerIsLot ? undefined : (
-                          <span
-                            className="badge bg-warn-soft text-warn"
-                            title={`No round lot sits between this stock's ${s.bandMin}% floor and its target, so the floor itself is the answer.`}
-                          >
-                            raw
-                          </span>
-                        )
-                      }
                       price={s.price}
                       held={s.shares}
                       canTrade={canTrade}
                       affordable={r.canAfford}
-                      cash={portfolio.cash}
                       onGo={() => onLot(s.id, 'low')}
                       goLabel="Trade to the lot nearest the floor"
                     />
@@ -856,7 +813,6 @@ export default function LotAwareTable({
                       canTrade={canTrade}
                       tone="buy"
                       affordable={r.canAfford}
-                      cash={portfolio.cash}
                       onGo={() => onEdge(s.id, 'high')}
                       goLabel="Trade to the ceiling"
                     />
@@ -868,21 +824,10 @@ export default function LotAwareTable({
                     <Destination
                       shares={r.upperLot}
                       pct={r.pctOf(r.upperLot ?? 0)}
-                      badge={
-                        r.upperIsLot ? undefined : (
-                          <span
-                            className="badge bg-warn-soft text-warn"
-                            title={`No round lot sits between this stock's target and its ${s.bandMax}% ceiling, so the ceiling itself is the answer.`}
-                          >
-                            raw
-                          </span>
-                        )
-                      }
                       price={s.price}
                       held={s.shares}
                       canTrade={canTrade}
                       affordable={r.canAfford}
-                      cash={portfolio.cash}
                       onGo={() => onLot(s.id, 'high')}
                       goLabel="Trade to the lot nearest the ceiling"
                     />

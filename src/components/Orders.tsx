@@ -33,7 +33,7 @@ export default function Orders({ state }: { state: ExplorerState }) {
     return (
       <p className="px-4 py-8 text-center text-[14px] text-ink-soft">
         {steps === 0
-          ? 'Nothing to trade yet. Use the buttons above.'
+          ? 'No trades generated. Please use the buttons above to generate trades.'
           : /* Every click has been undone, or cancelled out by a later one. Worth saying
                plainly: an empty list after a busy session reads like a fault otherwise. */
             `Nothing to trade. The ${steps} step${steps === 1 ? '' : 's'} so far cancel out — every position is back where it started.`}

@@ -21,8 +21,7 @@ export default async function UnlockPage({
     <div className="mx-auto max-w-[100rem] px-5 py-6 sm:px-7">
       <div className="flex min-h-[78vh] flex-col items-center justify-center px-6 text-center">
         <h1 className="max-w-3xl text-4xl font-bold tracking-[-0.02em] sm:text-5xl">
-          Cash Deployment Explorer
-          <span className="mt-1 block text-accent">Lot-Aware</span>
+          Portfolio Optimizer
         </h1>
 
         {configured ? (

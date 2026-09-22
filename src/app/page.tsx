@@ -20,13 +20,11 @@ export default function Page() {
     <div className="mx-auto max-w-[100rem] px-5 py-6 sm:px-7">
       <div className="flex min-h-[78vh] flex-col items-center justify-center px-6 text-center">
         <h1 className="max-w-3xl text-4xl font-bold tracking-[-0.02em] sm:text-5xl">
-          Cash Deployment Explorer
-          <span className="mt-1 block text-accent">Lot-Aware</span>
+          Portfolio Optimizer
         </h1>
 
         <p className="mt-5 max-w-xl text-[16px] leading-relaxed text-ink-soft">
-          Put idle cash to work one decision at a time, with every target checked against the
-          nearest 100-share lot and the stock&rsquo;s own drift band.
+          Optimizing portfolio allocations to maximize covered call writing.
         </p>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -34,7 +32,7 @@ export default function Page() {
             {loaded ? 'Continue' : 'Load a portfolio'}
           </Link>
           <Link className="btn-outline px-8 py-3.5 text-[16px]" href="/example">
-            Open the worked example
+            Worked example
           </Link>
         </div>
 

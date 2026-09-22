@@ -40,8 +40,8 @@ export default function HoldingsModal({
 
   return (
     <Modal
-      title="Starting holdings"
-      subtitle="The position this account begins from. Editing a share count or the cash balance redefines that starting point, so a reset returns here."
+      title="Current holdings"
+      subtitle="Please update shares and price as needed. You can also add additional holdings if needed."
       onClose={onClose}
       footer={
         <>
@@ -117,7 +117,7 @@ export default function HoldingsModal({
 
       <section>
         <div className="modal-section">
-          <h3>Other holdings, not in the model</h3>
+          <h3>Not In Holdings</h3>
           {portfolio.offModel.length > 0 && (
             <span className="font-mono text-[12px] tabular-nums text-ink-soft">
               {money(offModelTotal)}
@@ -193,13 +193,7 @@ export default function HoldingsModal({
           </table>
         )}
 
-        <div className="mt-3 flex items-start justify-between gap-4">
-          <p className="max-w-lg text-[13px] leading-relaxed text-ink-soft">
-            These count toward total account value, and so toward every band in dollars, until they
-            are sold. Selling one adds the whole proceeds to cash, which leaves the account total
-            where it was. A row holding nothing can be removed outright; anything with value has to
-            be sold, so no band ever moves without a trade behind it.
-          </p>
+        <div className="mt-3 flex justify-end">
           <button className="btn-chip shrink-0" onClick={onAddOffModel}>
             + Add holding
           </button>

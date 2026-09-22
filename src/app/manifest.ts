@@ -15,11 +15,10 @@ import type { MetadataRoute } from 'next';
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: '/',
-    name: 'Cash Deployment Explorer, Lot-Aware',
+    name: 'Portfolio Optimizer',
     // What fits under an icon. The full name is truncated by every shell that shows one.
-    short_name: 'Cash Explorer',
-    description:
-      'Deploy idle cash one decision at a time, with every buy checked against the nearest 100-share lot and the position’s own drift band.',
+    short_name: 'Optimizer',
+    description: 'Optimizing portfolio allocations to maximize covered call writing.',
     start_url: '/',
     display: 'standalone',
     // The page's own paper, so the window does not flash white before the app paints.

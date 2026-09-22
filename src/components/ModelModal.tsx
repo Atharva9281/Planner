@@ -52,7 +52,7 @@ export default function ModelModal({
   const ties = rankTies(portfolio.stocks);
 
   /*
-   * Narrows the rows to the tickers containing what is typed. Only the rows: the conviction order,
+   * Narrows the rows to the tickers containing what is typed. Only the rows: the order of priority,
    * the target total and the warnings below still read the whole model, because they are
    * statements about all of it.
    */
@@ -75,8 +75,8 @@ export default function ModelModal({
 
   return (
     <Modal
-      title="Model: targets and drift bands"
-      subtitle="What to hold and in what proportion. Bands are absolute: the floor and ceiling a position may sit between, as a percentage of total account value, and they need not be symmetric around the target. Prices are market data, not model data — they live under Edit starting holdings."
+      title="Model Holdings and Drift Band"
+      subtitle="Target, band floor % and band ceiling % are derived from the uploaded sheets and can be modified as needed. Holdings can be added or deleted on this page. Holdings can also be ranked for automatic portfolio optimization."
       onClose={onClose}
       footer={
         <>
@@ -151,7 +151,7 @@ export default function ModelModal({
               <tr>
                 {/* First, because it is the one column here that is read down rather than across:
                     the order is a property of the list, not of any one row in it. */}
-                <th className={TH} title="Order of conviction for the ranked deployment. 1 has first call on the cash. Leave blank to take no view.">
+                <th className={TH} title="Order of priority for the automatic optimizer. 1 goes first. Leave blank and the position goes to its band floor and is not optimized.">
                   Rank
                 </th>
                 <th className={TH}>Symbol</th>
@@ -190,7 +190,7 @@ export default function ModelModal({
                         title={
                           tie
                             ? `Rank ${tie.rank} is also used by ${tie.syms.filter((x) => x !== s.sym).join(', ')}. Each rank can go to only one stock.`
-                            : `Where ${s.sym} sits in the conviction order. 1 is first call on the cash; blank leaves it at its band floor.`
+                            : `Where ${s.sym} sits in the order of priority. 1 goes first; blank takes it to its band floor, not optimized.`
                         }
                         onCommit={(v) => onRank(s.id, v)}
                       />
@@ -275,19 +275,18 @@ export default function ModelModal({
           <p className="mt-3 rounded-lg bg-paper px-3 py-2 text-[13px] leading-relaxed text-ink-soft">
             {order.length === 0 ? (
               <>
-                Nothing is ranked, so the deployment run has nowhere to put the cash. Number the
-                positions you have a view on — 1 gets first call on the money, then 2, then 3.
-                Everything left blank is taken to its band floor and held there.
+                Rank holdings to set their order of priority for the automatic optimizer.
+                Unranked positions go to their band floor and are not optimized.
               </>
             ) : (
               <>
-                <span className="font-semibold text-ink">Conviction order:</span>{' '}
+                <span className="font-semibold text-ink">Order of priority:</span>{' '}
                 <span className="font-mono text-[12.5px]">
                   {order.map((s, i) => `${i + 1}. ${s.sym}`).join('   ')}
                 </span>
                 {'. '}
-                The other {portfolio.stocks.length - order.length} go to their band floor and stay
-                there.
+                The other {portfolio.stocks.length - order.length} go to their band floor and are
+                not optimized.
               </>
             )}
           </p>
@@ -352,10 +351,6 @@ export default function ModelModal({
             />
           </label>
         </div>
-        <p className="mt-2.5 max-w-lg text-[13px] leading-relaxed text-ink-soft">
-          Advisory only. Cash falling outside this band is flagged in the trade log, and the
-          target is shown beside the balance; no trade is ever generated to reach either.
-        </p>
       </section>
     </Modal>
   );

@@ -93,7 +93,7 @@ export default function WhatIfCell({
       {/* Said once, under the empty box. */}
       {!result && (
         <span className="font-sans text-[12px] leading-snug text-ink-soft">
-          {byWeight ? 'Percent of the account to hold.' : 'Shares you want to hold.'}
+          {byWeight ? 'Percent of the account to hold.' : 'Desired number of shares'}
         </span>
       )}
 
@@ -152,38 +152,18 @@ export default function WhatIfCell({
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-ink-soft">Cash</dt>
+                  <dt className="text-ink-soft">New cash</dt>
                   <dd className={result.cashAfter < 0 ? 'text-danger' : ''}>
                     {money(result.cashAfter)}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-ink-soft">Weight</dt>
+                  <dt className="text-ink-soft">New weight</dt>
                   <dd className={!banded || result.withinBand ? '' : 'font-semibold text-danger'}>
                     {pct(result.weightAfter)}
                   </dd>
                 </div>
               </dl>
-
-              {(banded || (!byWeight && result.isLot)) && (
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  {banded && (
-                    <span
-                      className={`badge ${
-                        result.withinBand ? 'bg-ok-soft text-ok' : 'bg-danger-soft text-danger'
-                      }`}
-                    >
-                      {result.withinBand
-                        ? 'inside the band'
-                        : `outside ${stock.bandMin}–${stock.bandMax}%`}
-                    </span>
-                  )}
-                  {/* Meaningless on a fund, which is not bought on the 100-share grid at all. */}
-                  {!byWeight && result.isLot && (
-                    <span className="badge bg-ok-soft text-ok">clean lot</span>
-                  )}
-                </div>
-              )}
 
               <div className="mt-2.5 flex gap-1.5">
                 <button
