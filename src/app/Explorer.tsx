@@ -406,9 +406,19 @@ export default function Explorer({ slot }: { slot: Slot }) {
             <Panel
               title={POSITIONS_TITLE}
               titleAction={
-                <button className="btn-solid" onClick={() => setOpenModal('model')}>
-                  Click here
-                </button>
+                <>
+                  <button className="btn-solid" onClick={() => setOpenModal('model')}>
+                    Click here
+                  </button>
+                  <RankRunButton
+                    portfolio={portfolio}
+                    ranked={rankedCount}
+                    stopAt={stopAt}
+                    onStopAt={setStopAt}
+                    onRun={handleDeployByRank}
+                    blockers={blockers}
+                  />
+                </>
               }
               summary={
                 pending === 0
@@ -422,20 +432,6 @@ export default function Explorer({ slot }: { slot: Slot }) {
                 </div>
               }
             >
-              {/* On its own strip rather than up on the header line with the three universal
-                  buttons. Partly because four controls and two button pairs do not fit a 1280
-                  window beside the title, and partly because it is not the same kind of control:
-                  those apply one column to every row, this one runs a sequence. */}
-              <RankRunButton
-                portfolio={portfolio}
-                ranked={rankedCount}
-                stopAt={stopAt}
-                onStopAt={setStopAt}
-                onRun={handleDeployByRank}
-                onEditRanks={() => setOpenModal('model')}
-                blockers={blockers}
-              />
-
               {bulk && (
                 <TradeAllResult
                   outcome={bulk}
@@ -561,7 +557,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
           onClose={closeModel}
           onField={(id, field, value) => editModel((cur) => setStockField(cur, id, field, value))}
           onRank={(id, rank) => editModel((cur) => setStockRank(cur, id, rank))}
-          onAddStock={(sym) => editModel((cur) => addStock(cur, sym))}
+          onAddStock={(sym, price) => editModel((cur) => addStock(cur, sym, price))}
           onRemoveStock={(id) => editModel((cur) => removeStock(cur, id))}
           onCashBand={(field, value) => editModel((cur) => setCashBand(cur, field, value))}
           onUndo={undoModelEdit}

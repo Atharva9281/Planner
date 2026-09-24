@@ -77,7 +77,7 @@ export function samplePortfolio(): Portfolio {
     stocks: SAMPLE_STOCKS.map((s) => ({ ...s })),
     cash: 38000,
     cashFloor: 3,
-    cashTarget: 5,
+    cashTarget: 8,
     cashCeiling: 8,
     offModel: [],
   };

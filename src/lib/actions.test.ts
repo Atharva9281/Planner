@@ -439,7 +439,7 @@ describe('editing', () => {
 
   it('keeps two rows with the same symbol independent', () => {
     // Holdings key off the row's identity, so a duplicated symbol is two positions, not one.
-    let state = addStock(sampleState(), 'msft');
+    let state = addStock(sampleState(), 'msft', 100);
     const newId = state.portfolio.stocks[state.portfolio.stocks.length - 1].id;
     state = setStockShares(state, newId, 25);
 
@@ -460,8 +460,13 @@ describe('editing', () => {
     expect(state.log).toHaveLength(0);
   });
 
+  it('adds a stock at the price it was given', () => {
+    const state = addStock(sampleState(), 'tsla', 182.5);
+    expect(stockOf(state, 'TSLA').price).toBe(182.5);
+  });
+
   it('uppercases and trims the ticker a stock is added with', () => {
-    const state = addStock(sampleState(), ' nvda ');
+    const state = addStock(sampleState(), ' nvda ', 100);
     expect(state.portfolio.stocks[state.portfolio.stocks.length - 1].sym).toBe('NVDA');
   });
 });

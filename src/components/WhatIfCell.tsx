@@ -110,6 +110,12 @@ export default function WhatIfCell({
             </span>
           ) : (
             <>
+              {/* Above the trade it limits, so the reason for the smaller figure is read first. */}
+              {result.partial && (
+                <p className="mb-1 font-sans text-[13px] font-semibold text-warn">
+                  Available cash buys {fmtShares(result.shares)} shares
+                </p>
+              )}
               <div>
                 <span
                   className={`text-[14px] font-bold ${
@@ -130,12 +136,6 @@ export default function WhatIfCell({
                   {byWeight ? `${fmtShares(result.shares)} sh` : money(result.amount)}
                 </span>
               </div>
-
-              {result.partial && (
-                <p className="sub text-warn">
-                  Cash covers {fmtShares(result.shares)} of {fmtShares(result.requested)} sh.
-                </p>
-              )}
 
               {/* Where the trade lands, and only that.
                   Each line used to carry "before → after". The before figures are all on the page

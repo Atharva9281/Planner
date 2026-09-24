@@ -104,7 +104,7 @@ export default function OffModelPanel({
   return (
     <div className="mb-4">
       <Panel
-        title="Not In Holdings"
+        title="Not In Model"
         summary={
           holdings.length === 0
             ? 'Nothing yet'

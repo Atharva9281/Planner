@@ -857,15 +857,17 @@ export function setCashBand(
 }
 
 /**
- * The ticker is given at the moment of adding, because it cannot be changed afterwards: a model
- * row's ticker is locked, so the advisor never renames AAPL into something else by a stray edit.
+ * The ticker and price are given at the moment of adding. The ticker because a model row's ticker
+ * is locked, so the advisor never renames AAPL into something else by a stray edit; the price
+ * because a priced row has nowhere on the page to change it, and a placeholder $100 would size
+ * every trade on the row wrong.
  */
-export function addStock(state: ExplorerState, sym: string): ExplorerState {
+export function addStock(state: ExplorerState, sym: string, price: number): ExplorerState {
   const id = `s${state.nextId}`;
   const stock: Stock = {
     id,
     sym: sym.trim().toUpperCase(),
-    price: 100,
+    price: Number(price) || 0,
     target: 5,
     bandMin: 3,
     bandMax: 7,

@@ -36,13 +36,17 @@ const STOP_LABEL: Record<StopAt, string> = {
   ceiling: 'Spend to the cash ceiling',
 };
 
+/**
+ * The stopping point and the press, drawn inline on the positions panel's title line beside
+ * "Click here". The strip that used to hold them also restated how many positions were ranked and
+ * linked to the rank editor, which "Click here" already opens.
+ */
 export function RankRunButton({
   portfolio,
   ranked,
   stopAt,
   onStopAt,
   onRun,
-  onEditRanks,
   blockers,
 }: {
   portfolio: Portfolio;
@@ -51,71 +55,41 @@ export function RankRunButton({
   stopAt: StopAt;
   onStopAt: (stopAt: StopAt) => void;
   onRun: () => void;
-  /** Opens the model editor, where the order is set. */
-  onEditRanks: () => void;
   /** Why the run cannot be made. Empty when it can. */
   blockers: string[];
 }) {
   const stopped = blockers[0] ?? null;
 
   return (
-    <div
-      className="mx-4 mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md
-                 border border-line bg-panel-alt px-3.5 py-2.5"
-    >
-      <div className="min-w-0 text-[13.5px]">
-        <span className="font-semibold">Ranked deployment</span>{' '}
-        <span className="text-ink-soft">
-          {ranked === 0 ? (
-            <>
-              · nothing ranked yet, so the cash has nowhere to go.{' '}
-              <button className="font-semibold text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent" onClick={onEditRanks}>
-                Set the order
-              </button>
-            </>
-          ) : (
-            <>
-              · {ranked} ranked, {portfolio.stocks.length - ranked} held at their floor ·{' '}
-              <button className="font-semibold text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent" onClick={onEditRanks}>
-                Change the order
-              </button>
-            </>
-          )}
-        </span>
-      </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        className="field h-[38px] w-auto py-0 font-sans text-[13px]"
+        value={stopAt}
+        onChange={(e) => onStopAt(e.target.value as StopAt)}
+        title={
+          stopAt === 'floor'
+            ? `Deploys every dollar the mandate allows, down to the ${portfolio.cashFloor}% floor less half a point.`
+            : `Keeps the cash: no buy that would take the balance under its ${portfolio.cashCeiling}% ceiling. Steps are taken whole, so it stops a little above rather than exactly on it.`
+        }
+      >
+        <option value="floor">{STOP_LABEL.floor}</option>
+        <option value="ceiling">{STOP_LABEL.ceiling}</option>
+      </select>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        {/* Where the run stops spending, the one decision in it that is not about a stock. Beside
-            the button rather than inside a dialog, because it changes what the press does. */}
-        <select
-          className="field h-[30px] w-auto py-0 text-[12.5px]"
-          value={stopAt}
-          onChange={(e) => onStopAt(e.target.value as StopAt)}
-          title={
-            stopAt === 'floor'
-              ? `Deploys every dollar the mandate allows, down to the ${portfolio.cashFloor}% floor less half a point.`
-              : `Keeps the cash: no buy that would take the balance under its ${portfolio.cashCeiling}% ceiling. Steps are taken whole, so it stops a little above rather than exactly on it.`
-          }
-        >
-          <option value="floor">{STOP_LABEL.floor}</option>
-          <option value="ceiling">{STOP_LABEL.ceiling}</option>
-        </select>
-
-        <button
-          className="btn-solid"
-          disabled={stopped !== null || ranked === 0}
-          title={stopped ?? (ranked === 0 ? NOTHING_RANKED : RUN_HINT)}
-          onClick={onRun}
-        >
-          Deploy by rank
-        </button>
-      </div>
+      <button
+        className="btn-solid"
+        disabled={stopped !== null || ranked === 0}
+        title={stopped ?? (ranked === 0 ? NOTHING_RANKED : RUN_HINT)}
+        onClick={onRun}
+      >
+        Deploy by rank
+      </button>
     </div>
   );
 }
 
 const NOTHING_RANKED =
-  'No position is ranked, so there is nothing for the run to deploy into. Number them under Edit model & cash band — 1 gets first call on the cash.';
+  'No position is ranked, so there is nothing for the run to deploy into. Number them under Click here — 1 gets first call on the cash.';
 
 const RUN_HINT =
   'Sells every off-model holding, takes every position to its band floor, then works down the order of priority: lowest lot, target lot, highest lot. A step the cash cannot cover whole is skipped and the next rank gets its turn. One press, one undo.';

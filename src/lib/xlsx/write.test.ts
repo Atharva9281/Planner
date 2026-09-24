@@ -386,7 +386,7 @@ describe('the account sheet', () => {
     expect(rowValues(xml, 2)).toEqual(['Portfolio', 'Worked example']);
     expect(rowValues(xml, 3)[1]).toBe('2026-08-31 12:00 UTC');
     expect(rowValues(xml, 7)).toEqual(['Cash floor %', '3']);
-    expect(rowValues(xml, 8)).toEqual(['Cash target %', '5']);
+    expect(rowValues(xml, 8)).toEqual(['Cash target %', '8']);
     expect(rowValues(xml, 9)).toEqual(['Cash ceiling %', '8']);
   });
 });

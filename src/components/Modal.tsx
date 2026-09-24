@@ -6,6 +6,7 @@ export default function Modal({
   width = 'max-w-3xl',
   footer,
   onClose,
+  locked = false,
   children,
 }: {
   title: string;
@@ -13,11 +14,13 @@ export default function Modal({
   width?: string;
   footer?: React.ReactNode;
   onClose: () => void;
+  /** Refuses every way out (Escape, the backdrop, the close button) while the contents are invalid. */
+  locked?: boolean;
   children: React.ReactNode;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !locked) onClose();
     };
     window.addEventListener('keydown', onKey);
     // The page behind is a wide table; letting it scroll under the panel is disorienting.
@@ -27,13 +30,13 @@ export default function Modal({
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = previous;
     };
-  }, [onClose]);
+  }, [onClose, locked]);
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4 backdrop-blur-[3px] sm:p-6"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && !locked) onClose();
       }}
     >
       <div
@@ -51,8 +54,10 @@ export default function Modal({
           </div>
           <button
             className="-mr-2 -mt-1 rounded-lg px-2 py-1 text-2xl leading-none text-ink-faint
-                       transition-colors hover:bg-paper hover:text-ink"
+                       transition-colors hover:bg-paper hover:text-ink disabled:opacity-30
+                       disabled:hover:bg-transparent"
             onClick={onClose}
+            disabled={locked}
             aria-label="Close"
           >
             &times;

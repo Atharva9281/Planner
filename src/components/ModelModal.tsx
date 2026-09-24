@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import Modal from './Modal';
-import { NumInput, SymInput } from './Inputs';
+import { dropFocusOnWheel, NumInput } from './Inputs';
+import { modelErrors } from '@/lib/modelCheck';
 import { inRankOrder, rankOf, rankTies, rankTiesMessage } from '@/lib/rank';
 import { Portfolio, Stock } from '@/lib/types';
 
@@ -11,7 +12,7 @@ interface Props {
   onClose: () => void;
   onField: (stockId: string, field: ModelField, value: string | number) => void;
   onRank: (stockId: string, rank: number) => void;
-  onAddStock: (sym: string) => void;
+  onAddStock: (sym: string, price: number) => void;
   onRemoveStock: (stockId: string) => void;
   onCashBand: (field: 'cashFloor' | 'cashTarget' | 'cashCeiling', value: number) => void;
   /** Takes back the last edit made since the dialog opened. */
@@ -29,6 +30,9 @@ interface Props {
 const TH =
   'sticky -top-5 z-10 bg-panel shadow-[inset_0_-1px_0_var(--color-line)] px-2 py-2 text-left text-[11.5px] font-semibold uppercase tracking-[0.04em] text-ink-soft';
 const TD = 'border-b border-line-soft px-2 py-2.5 align-middle';
+
+/** The sleeves a model export uses. Any other one found in the model is offered as well. */
+const SLEEVES = ['Stocks / ETFs Sleeve', 'Fixed Income Sleeve'];
 
 /** Symbols on more than one row. Each row is still its own position, but the advisor should know
  *  the two will read as one holding on any statement. */
@@ -51,7 +55,14 @@ export default function ModelModal({
 }: Props) {
   const duplicates = duplicateSymbols(portfolio.stocks);
   const targetTotal = portfolio.stocks.reduce((sum, s) => sum + s.target, 0);
-  const invalidBand = portfolio.stocks.filter((s) => s.bandMin > s.bandMax);
+  const sleeves = [
+    ...new Set([...SLEEVES, ...portfolio.stocks.map((s) => s.type ?? '').filter(Boolean)]),
+  ];
+  /* The dialog will not close on a model that does not add up. An empty model is let go, so
+     opening the editor to look is never a trap. */
+  const errors = portfolio.stocks.length > 0 ? modelErrors(portfolio) : [];
+  const locked = errors.length > 0;
+  const cashBad = !(portfolio.cashFloor <= portfolio.cashTarget && portfolio.cashTarget <= portfolio.cashCeiling);
   const order = inRankOrder(portfolio.stocks);
   const ties = rankTies(portfolio.stocks);
 
@@ -67,14 +78,18 @@ export default function ModelModal({
     : portfolio.stocks;
   const tableRef = useRef<HTMLTableElement>(null);
 
-  /** The ticker a new row will carry. Asked for up front, since the row's ticker is locked. */
+  /** The ticker and price a new row will carry, both asked for up front since neither can be
+   *  changed on the row afterwards. */
   const [newSym, setNewSym] = useState('');
+  const [newPrice, setNewPrice] = useState('');
+  const canAdd = newSym.trim() !== '' && Number(newPrice) > 0;
   const addNew = () => {
-    if (!newSym.trim()) return;
+    if (!canAdd) return;
     // The new row would be hidden by a search that does not match it.
     setQuery('');
-    onAddStock(newSym);
+    onAddStock(newSym, Number(newPrice));
     setNewSym('');
+    setNewPrice('');
   };
 
   return (
@@ -82,6 +97,7 @@ export default function ModelModal({
       title="Model Holdings and Drift Band"
       subtitle="Target, band floor % and band ceiling % are derived from the uploaded sheets and can be modified as needed. Holdings can be added or deleted on this page. Holdings can also be ranked for automatic portfolio optimization."
       onClose={onClose}
+      locked={locked}
       footer={
         <>
           {/* Every edit in this dialog, one at a time, back to how it was when the dialog opened.
@@ -89,7 +105,12 @@ export default function ModelModal({
           <button className="btn-outline" disabled={undoable === 0} onClick={onUndo}>
             Undo
           </button>
-          <button className="btn-solid" onClick={onClose}>
+          <button
+            className="btn-solid"
+            disabled={locked}
+            title={locked ? 'Fix the errors in red before closing.' : undefined}
+            onClick={onClose}
+          >
             Done
           </button>
         </>
@@ -170,7 +191,7 @@ export default function ModelModal({
                 </tr>
               )}
               {shown.map((s) => {
-                const bad = s.bandMin > s.bandMax;
+                const bad = !(s.bandMin <= s.target && s.target <= s.bandMax);
                 const tie = ties.find((t) => t.rank === rankOf(s));
                 return (
                   <tr key={s.id}>
@@ -199,15 +220,22 @@ export default function ModelModal({
                     {/* The sleeve, straight from the export. Descriptive, so it is text rather
                         than a number and nothing computes against it. */}
                     <td className={`${TD} w-52`}>
-                      <SymInput
+                      <select
                         className="field font-sans text-[13px]"
                         value={s.type ?? ''}
-                        onCommit={(v) => onField(s.id, 'type', v)}
-                      />
+                        onChange={(e) => onField(s.id, 'type', e.target.value)}
+                      >
+                        {!s.type && <option value="">—</option>}
+                        {sleeves.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className={TD}>
                       <NumInput
-                        className="field text-right"
+                        className={`field text-right ${bad ? 'border-danger text-danger' : ''}`}
                         step="0.5"
                         value={s.target}
                         onCommit={(v) => onField(s.id, 'target', v)}
@@ -257,9 +285,24 @@ export default function ModelModal({
               if (e.key === 'Enter') addNew();
             }}
           />
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            className="field w-32 py-1.5 text-right placeholder:font-sans"
+            placeholder="Price $"
+            aria-label="Price of the stock to add"
+            value={newPrice}
+            onChange={(e) => setNewPrice(e.target.value)}
+            onWheel={dropFocusOnWheel}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') addNew();
+            }}
+          />
           <button
             className="btn-chip disabled:opacity-45"
-            disabled={!newSym.trim()}
+            disabled={!canAdd}
+            title={canAdd ? undefined : 'Enter a ticker and its price.'}
             onClick={addNew}
           >
             + Add stock
@@ -300,12 +343,6 @@ export default function ModelModal({
           </p>
         )}
 
-        {invalidBand.length > 0 && (
-          <p className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-[13px] leading-relaxed text-danger">
-            {invalidBand.map((s) => s.sym).join(', ')} has a floor above its ceiling, so no share
-            count can satisfy the band and nothing will be tradeable.
-          </p>
-        )}
 
         {duplicates.length > 0 && (
           <p className="mt-3 rounded-lg bg-warn-soft px-3 py-2 text-[13px] leading-relaxed text-warn">
@@ -315,7 +352,7 @@ export default function ModelModal({
         )}
       </section>
 
-      <section>
+      <section className={locked ? 'mb-6' : undefined}>
         <div className="modal-section">
           <h3>Cash band</h3>
         </div>
@@ -325,7 +362,7 @@ export default function ModelModal({
           <label className="flex-1">
             <span className="field-label mb-1.5">Floor %</span>
             <NumInput
-              className="field text-right"
+              className={`field text-right ${cashBad ? 'border-danger text-danger' : ''}`}
               step="0.5"
               value={portfolio.cashFloor}
               onCommit={(v) => onCashBand('cashFloor', v)}
@@ -334,7 +371,7 @@ export default function ModelModal({
           <label className="flex-1">
             <span className="field-label mb-1.5">Target %</span>
             <NumInput
-              className="field text-right"
+              className={`field text-right ${cashBad ? 'border-danger text-danger' : ''}`}
               step="0.5"
               value={portfolio.cashTarget}
               onCommit={(v) => onCashBand('cashTarget', v)}
@@ -343,7 +380,7 @@ export default function ModelModal({
           <label className="flex-1">
             <span className="field-label mb-1.5">Ceiling %</span>
             <NumInput
-              className="field text-right"
+              className={`field text-right ${cashBad ? 'border-danger text-danger' : ''}`}
               step="0.5"
               value={portfolio.cashCeiling}
               onCommit={(v) => onCashBand('cashCeiling', v)}
@@ -351,6 +388,21 @@ export default function ModelModal({
           </label>
         </div>
       </section>
+
+      {/* Last, right above Done, which it is the reason for. */}
+      {locked && (
+        <div
+          role="alert"
+          className="rounded-lg bg-danger-soft px-3 py-2 text-[13px] leading-relaxed text-danger"
+        >
+          <p className="font-semibold">Fix these before closing:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {errors.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Modal>
   );
 }

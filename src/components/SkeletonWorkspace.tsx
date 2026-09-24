@@ -104,12 +104,11 @@ export default function SkeletonWorkspace({
               </div>
 
               <p className="mt-6 border-t border-line-soft pt-5 text-center text-[13.5px] text-ink-soft">
-                No files to hand? You can{' '}
                 <button
                   className="font-semibold text-accent underline underline-offset-2 hover:text-accent-deep"
                   onClick={onAddStock}
                 >
-                  enter a portfolio by hand
+                  Enter model manually
                 </button>{' '}
                 or{' '}
                 <Link

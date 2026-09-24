@@ -117,7 +117,7 @@ export default function HoldingsModal({
 
       <section>
         <div className="modal-section">
-          <h3>Not In Holdings</h3>
+          <h3>Not In Model</h3>
           {portfolio.offModel.length > 0 && (
             <span className="font-mono text-[12px] tabular-nums text-ink-soft">
               {money(offModelTotal)}
