@@ -61,6 +61,27 @@ export interface CarriedModel {
   from: string;
 }
 
+/**
+ * A parse waiting for the review dialog, with whatever the account on screen hands on to it.
+ *
+ * Only the upload screen's own files arrive bare. A model carried to the next account, or a new
+ * model put over the same account, both bring the prices the closed account already had.
+ */
+export interface PendingImport {
+  parsed: ParsedImport;
+  /**
+   * By symbol, seeding the review's price fields. A held position ignores them, because the
+   * holdings in the parse price it; they only fill the fields for positions nothing else prices.
+   * Each field filled this way is marked "kept".
+   */
+  keptPrices?: Record<string, number>;
+  /**
+   * Set only when the holdings are the ones already loaded rather than a new export. Their prices
+   * are as old as they were, and a fresh stamp would make a Friday statement look like today's.
+   */
+  loadedAt?: string;
+}
+
 /** A position read from a holdings export. Option rows never become one. */
 export interface HoldingRow {
   sym: string;

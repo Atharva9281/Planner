@@ -48,8 +48,8 @@ import {
   undoSize,
 } from '@/lib/actions';
 import { inRankOrder, runBlockers, StopAt } from '@/lib/rank';
-import { carryModel } from '@/lib/import/carry';
-import { CarriedModel, ParsedImport } from '@/lib/import/types';
+import { carryModel, startingHoldings, swapModel } from '@/lib/import/carry';
+import { PendingImport } from '@/lib/import/types';
 import { netOrders } from '@/lib/orders';
 import { priceAge } from '@/lib/format';
 import {
@@ -80,10 +80,8 @@ export default function Explorer({ slot }: { slot: Slot }) {
     setWorkspace(slot, next);
 
   const [openModal, setOpenModal] = useState<OpenModal>(null);
-  /** A parse started from the landing page, handed to the review dialog when it opens. */
-  const [pendingImport, setPendingImport] = useState<ParsedImport | null>(null);
-  /** Set alongside it when the model in that parse was carried over rather than uploaded. */
-  const [pendingCarried, setPendingCarried] = useState<CarriedModel | null>(null);
+  /** A parse handed to the review dialog when it opens, with any prices the last account had. */
+  const [review, setReview] = useState<PendingImport | null>(null);
   /** A pending discard, held until the advisor confirms it. Null when nothing is being asked. */
   const [confirming, setConfirming] = useState<null | 'clear' | 'next'>(null);
   /** What the last press of a universal button did. Cleared by an undo, a reset, or a new press. */
@@ -195,8 +193,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
 
   const closeImport = () => {
     setOpenModal(null);
-    setPendingImport(null);
-    setPendingCarried(null);
+    setReview(null);
   };
 
   const handleTradeTo = (stockId: string, targetShares: number) =>
@@ -375,8 +372,7 @@ export default function Explorer({ slot }: { slot: Slot }) {
         <SkeletonWorkspace
           carried={state.carried}
           onReady={(parsed, carried) => {
-            setPendingImport(parsed);
-            setPendingCarried(carried ?? null);
+            setReview({ parsed, keptPrices: carried?.prices });
             setOpenModal('import');
           }}
           onAddStock={() => setOpenModal('model')}
@@ -541,11 +537,19 @@ export default function Explorer({ slot }: { slot: Slot }) {
 
       {openModal === 'import' && (
         <ImportDialog
-          initial={pendingImport ?? undefined}
-          carried={pendingCarried ?? undefined}
+          initial={review?.parsed}
+          keptPrices={review?.keptPrices}
           onClose={closeImport}
           onApply={(next) => {
-            setState(next);
+            /* Holdings that were already loaded keep the age of their prices. */
+            const loadedAt = review?.loadedAt;
+            setState(
+              next.source && loadedAt ? { ...next, source: { ...next.source, loadedAt } } : next,
+            );
+            /* Every result line speaks of trades on the log just replaced. */
+            setBulk(null);
+            setSale(null);
+            setRun(null);
             closeImport();
           }}
         />
@@ -565,16 +569,21 @@ export default function Explorer({ slot }: { slot: Slot }) {
         />
       )}
 
-      {/* The ordinary move: same model, next account, and the file it needs asked for here. */}
+      {/* The two ordinary moves: the next account on this model, or this account on a new one.
+          Each asks for the one file it needs. */}
       {confirming === 'next' && (
         <LoadNextAccount
           carried={carryModel(state)!}
-          atRisk={atRisk}
+          holdings={startingHoldings(state).holdings}
           onCancel={() => setConfirming(null)}
           onReady={(parsed, carried) => {
             setConfirming(null);
-            setPendingImport(parsed);
-            setPendingCarried(carried);
+            setReview({ parsed, keptPrices: carried.prices });
+            setOpenModal('import');
+          }}
+          onModel={(modelFile) => {
+            setConfirming(null);
+            setReview(swapModel(state, modelFile));
             setOpenModal('import');
           }}
           onStartOver={() => {

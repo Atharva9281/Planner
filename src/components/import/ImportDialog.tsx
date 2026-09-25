@@ -3,7 +3,7 @@ import Modal from '../Modal';
 import { NumInput } from '../Inputs';
 import { applyImport, importIssues, pickModel } from '@/lib/import/apply';
 import { offModelSymbols, unpricedSymbols } from '@/lib/import/parse';
-import { CarriedModel, ParsedImport, Resolution } from '@/lib/import/types';
+import { ParsedImport, Resolution } from '@/lib/import/types';
 import { inDisplayOrder } from '@/lib/engine';
 import { money } from '@/lib/format';
 import { ExplorerState } from '@/lib/types';
@@ -24,14 +24,14 @@ import { ExplorerState } from '@/lib/types';
  */
 export default function ImportDialog({
   initial,
-  carried,
+  keptPrices,
   onClose,
   onApply,
 }: {
   /** A parse already done on the page behind, so the dialog opens straight into the review. */
   initial?: ParsedImport;
-  /** Set when the model came from the account just closed, which brings its prices with it. */
-  carried?: CarriedModel;
+  /** Prices the account on screen already had, when this follows one rather than a fresh upload. */
+  keptPrices?: Record<string, number>;
   onClose: () => void;
   onApply: (state: ExplorerState) => void;
 }) {
@@ -40,13 +40,12 @@ export default function ImportDialog({
     modelName: initial ? pickModel(initial)?.name : undefined,
     /* The previous account's prices, seeded so the fields open filled in rather than as twenty
        empty boxes. Harmless where this account holds the position: `applyImport` reads the
-       holdings file first and only falls back to these, so real market data still wins. */
-    prices: carried ? { ...carried.prices } : undefined,
+       holdings first and only falls back to these, so real market data still wins. */
+    prices: keptPrices ? { ...keptPrices } : undefined,
   }));
 
   /** Symbols whose price arrived this way, so the field can say so rather than looking typed. */
-  const carriedPrice = (sym: string) =>
-    carried !== undefined && carried.prices[sym] !== undefined;
+  const carriedPrice = (sym: string) => keptPrices?.[sym] !== undefined;
 
   const model = parsed ? pickModel(parsed, resolution.modelName) : undefined;
   const offModel = parsed && model ? offModelSymbols(model, parsed.holdings) : [];

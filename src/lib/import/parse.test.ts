@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { likelyFunds, num, offModelSymbols, parseSheets, unpricedSymbols } from './parse';
 import { applyImport, importIssues } from './apply';
-import { carriedAsImport, carryModel } from './carry';
-import { sellAllOffModel } from '../actions';
+import { carriedAsImport, carryModel, swapModel } from './carry';
+import { sellAllOffModel, setStockRank } from '../actions';
 import { ParsedImport, Resolution, SheetGrid } from './types';
 import { lotAwareTarget, mandatoryStatus, needsDecision, planToTarget, totalValue } from '../engine';
 import { ExplorerState } from '../types';
@@ -633,5 +633,89 @@ describe('one model, several accounts', () => {
   it('is not offered when a hand-entered price would be the only thing carried', () => {
     // Nothing loaded at all: there is no model to reuse and no prices to seed from.
     expect(carryModel(applyImport(parseSheets([]), baseResolution()))).toBeUndefined();
+  });
+});
+
+describe('the same account on a new model', () => {
+  /* "Update files", the other way round: the holdings stay and the model changes. The account
+     starts again from its starting position against the new model, and every price the account
+     already had comes along, so overlapping models only ask for what is new. */
+
+  const NEW_MODEL = 'B200 - SLEEVE - Income';
+
+  /** Shares AMAT, QQQ and AAPL with the old model; takes in AA, held off-model until now; drops
+   *  HWM, which the account holds; adds NVDA, which nothing has priced. */
+  const newModelSheet = (): SheetGrid => ({
+    name: 'Upload_Security Model',
+    rows: [
+      modelSheet().rows[0],
+      [NEW_MODEL, 'SAM', 'Sleeve', '18CD', 'Income', 'USD CASH', '', 'Cash and Equiv', 6, 4, 10],
+      [NEW_MODEL, 'SAM', 'Sleeve', '18CD', 'Income', 'AMAT', '', 'Stocks / ETFs Sleeve', 20, 15, 25],
+      [NEW_MODEL, 'SAM', 'Sleeve', '18CD', 'Income', 'QQQ', '', 'Stocks / ETFs Sleeve', 20, 15, 25],
+      [NEW_MODEL, 'SAM', 'Sleeve', '18CD', 'Income', 'AAPL', '', 'Stocks / ETFs Sleeve', 20, 15, 25],
+      [NEW_MODEL, 'SAM', 'Sleeve', '18CD', 'Income', 'AA', '', 'Stocks / ETFs Sleeve', 14, 10, 18],
+      [NEW_MODEL, 'SAM', 'Sleeve', '18CD', 'Income', 'NVDA', '', 'Stocks / ETFs Sleeve', 20, 15, 25],
+    ],
+  });
+
+  /** John and Jane Doe on the old model, with AAPL priced by hand in the review. */
+  const loaded = () =>
+    applyImport(
+      parseSheets([modelSheet(), holdingsSheet()]),
+      baseResolution({ prices: { AAPL: 250.5 } }),
+    );
+
+  const swapped = (state: ExplorerState) => {
+    const review = swapModel(state, parseSheets([newModelSheet()]));
+    const resolution = baseResolution({ prices: review.keptPrices });
+    return { review, resolution, next: applyImport(review.parsed, resolution) };
+  };
+
+  it('starts from the starting holdings and clears the log, whatever was traded since', () => {
+    const traded = sellAllOffModel(loaded()).state;
+    expect(traded.log.length).toBeGreaterThan(0);
+
+    const { next } = swapped(traded);
+    expect(next.log).toEqual([]);
+    expect(next.portfolio.cash).toBe(140328.86);
+    expect(next.portfolio.stocks.find((s) => s.sym === 'AA')!.shares).toBe(200);
+    expect(next.portfolio.offModel.find((h) => h.sym === 'FLUD')!.shares).toBe(7373);
+  });
+
+  it('measures the account against the new model, and only the new one', () => {
+    const { next } = swapped(loaded());
+    expect(next.portfolio.stocks.map((s) => s.sym)).toEqual(['AMAT', 'QQQ', 'AAPL', 'AA', 'NVDA']);
+    expect(next.portfolio.cashTarget).toBe(6);
+    expect(next.source?.modelName).toBe(NEW_MODEL);
+    // Still the same account.
+    expect(next.source?.label).toBe('John and Jane Doe');
+
+    // Held, and dropped by the new model: off-model now, so it is there to sell.
+    expect(next.portfolio.offModel.map((h) => h.sym).sort()).toEqual(['FLUD', 'HWM']);
+    // Held off-model until now, and in the new model: an ordinary row, with its own price.
+    const aa = next.portfolio.stocks.find((s) => s.sym === 'AA')!;
+    expect([aa.shares, aa.price]).toEqual([200, 71.38]);
+  });
+
+  it('keeps every price the account had, so only a ticker new to it asks for one', () => {
+    const { review, resolution, next } = swapped(loaded());
+    // Typed by hand for the old model, and in the new one too.
+    expect(next.portfolio.stocks.find((s) => s.sym === 'AAPL')!.price).toBe(250.5);
+    expect(importIssues(review.parsed, resolution).unpriced).toEqual(['NVDA']);
+  });
+
+  it('keeps the order of priority for the tickers both models share', () => {
+    const amat = loaded().portfolio.stocks.find((s) => s.sym === 'AMAT')!;
+    const hwm = loaded().portfolio.stocks.find((s) => s.sym === 'HWM')!;
+    const ranked = setStockRank(setStockRank(loaded(), amat.id, 1), hwm.id, 2);
+
+    const { next } = swapped(ranked);
+    expect(next.portfolio.stocks.find((s) => s.sym === 'AMAT')!.rank).toBe(1);
+    expect(next.portfolio.stocks.find((s) => s.sym === 'QQQ')!.rank).toBeUndefined();
+  });
+
+  it('keeps the age of the prices, which are the ones already loaded', () => {
+    const state = { ...loaded(), source: { ...loaded().source!, loadedAt: '2026-09-18T15:00:00Z' } };
+    expect(swapModel(state, parseSheets([newModelSheet()])).loadedAt).toBe('2026-09-18T15:00:00Z');
   });
 });

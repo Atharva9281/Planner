@@ -1,5 +1,5 @@
 import { ExplorerState } from '../types';
-import { CarriedModel, ParsedImport } from './types';
+import { CarriedModel, HoldingRow, ParsedHoldings, ParsedImport, PendingImport } from './types';
 
 /**
  * Lifts the model off a loaded account so the next account can be opened against it.
@@ -80,5 +80,97 @@ export function carriedAsImport(carried: CarriedModel): ParsedImport {
       },
     ],
     warnings: [],
+  };
+}
+
+/**
+ * The account's starting position, read back out as if it were its holdings export.
+ *
+ * The baseline is the file as it was loaded plus any correction made in "Edit current holdings",
+ * which edits the baseline rather than trading. Trades made since are left out on purpose: see
+ * `swapModel`. A model row the account never held is not a holding and is left out as well.
+ *
+ * `prices` is every price the account knows, held or not: the table's own figures, typed ones
+ * included, and those of an off-model row bought since. They seed the next review's fields.
+ */
+export function startingHoldings(state: ExplorerState): {
+  holdings: ParsedHoldings;
+  prices: Record<string, number>;
+} {
+  const { portfolio, baseline, source } = state;
+
+  const prices: Record<string, number> = {};
+  for (const s of portfolio.stocks) if (s.price > 0) prices[s.sym] = s.price;
+  for (const h of portfolio.offModel) if (h.price > 0) prices[h.sym] = h.price;
+
+  /* Summed by symbol, because an off-model row can repeat a ticker, and the parser would have
+     read one line of a holdings file per security. */
+  const held = new Map<string, HoldingRow>();
+  const hold = (sym: string, shares: number, price: number, tradeable: boolean) => {
+    if (shares <= 0) return;
+    const row = held.get(sym);
+    if (row) row.shares += shares;
+    else held.set(sym, { sym, shares, price: prices[sym] ?? price, tradeable });
+  };
+  for (const s of portfolio.stocks) {
+    hold(s.sym, baseline.shares[s.id] ?? 0, s.price, s.tradeable !== false);
+  }
+  for (const h of baseline.offModel ?? []) hold(h.sym, h.shares, h.price, true);
+
+  return {
+    holdings: {
+      /* The account and nothing else, for the same reason as `carryModel`'s `from`: a label that
+         fell back to the model name would put the old model's name on the new one's account. */
+      accountName:
+        source?.label && source.label !== source.modelName ? source.label : undefined,
+      positions: [...held.values()],
+      cash: baseline.cash,
+      /* Whatever the first load settled for the balance, file or typed, is the balance now. */
+      cashFound: true,
+    },
+    prices,
+  };
+}
+
+/**
+ * The same account on a new model: the other half of "Update files".
+ *
+ * It starts again from the starting position and clears the trade log. The trades were decided
+ * against the old model and may be wrong under the new one, so it is as if the holdings file had
+ * been loaded with this model to begin with (the CFP's call, 2026-09-24).
+ *
+ * Every price the account already has comes along, which is what makes overlapping models cheap
+ * to swap between: a held position is priced by the holdings, a ticker both models share keeps
+ * the price typed for it, and only a ticker new to this account asks for one. The order of
+ * priority comes along for the tickers both models share, being the advisor's view of the
+ * security rather than of either model.
+ */
+export function swapModel(state: ExplorerState, modelFile: ParsedImport): PendingImport {
+  const { holdings, prices } = startingHoldings(state);
+
+  const rankOf = new Map<string, number>();
+  for (const s of state.portfolio.stocks) if (s.rank) rankOf.set(s.sym, s.rank);
+
+  return {
+    parsed: {
+      models: modelFile.models.map((m) => ({
+        ...m,
+        rows: m.rows.map((r) => (rankOf.has(r.sym) ? { ...r, rank: rankOf.get(r.sym) } : r)),
+      })),
+      holdings,
+      sheets: [
+        ...modelFile.sheets,
+        {
+          name: holdings.accountName
+            ? `${holdings.accountName} (current holdings)`
+            : 'The current holdings',
+          read: 'holdings',
+          rows: holdings.positions.length,
+        },
+      ],
+      warnings: modelFile.warnings,
+    },
+    keptPrices: prices,
+    loadedAt: state.source?.loadedAt,
   };
 }
