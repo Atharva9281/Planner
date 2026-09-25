@@ -81,7 +81,12 @@ export default function ImportDialog({
   return (
     <Modal
       title="Load a portfolio"
-      subtitle="Check what was read, settle anything the files leave open, then apply."
+      subtitle={
+        <>
+          Please review and verify uploaded data before clicking{' '}
+          <b className="text-ink">Apply to portfolio</b>.
+        </>
+      }
       width="max-w-4xl"
       onClose={onClose}
       footer={
@@ -214,19 +219,14 @@ export default function ImportDialog({
           {offModel.length > 0 && (
             <section>
               <div className="modal-section">
-                <h3>Held, but not in the model</h3>
+                <h3>Held, but not in the model ({offModel.length})</h3>
                 <span className="font-mono text-[12.5px] tabular-nums text-ink-soft">
                   {money(offModel.reduce((n, h) => n + h.shares * h.price, 0))}
                 </span>
               </div>
               <p className="max-w-2xl text-[13.5px] leading-relaxed text-ink-soft">
-                <b className="text-ink">
-                  {offModel.length} holding{offModel.length === 1 ? '' : 's'}
-                </b>{' '}
-                the model has no row for: {offModel.map((h) => h.sym).join(', ')}. They come in
-                with the account and count toward its value, so the bands are measured against the
-                whole of it. The model is the mandate, so the usual answer is to sell them — there
-                is a Sell all button on their own panel under the table once this loads.
+                The following holdings are not a part of your model:{' '}
+                <b className="text-ink">{offModel.map((h) => h.sym).join(', ')}</b>
               </p>
             </section>
           )}
@@ -240,27 +240,23 @@ export default function ImportDialog({
           {issues && (issues.needsCash || needPrice.length > 0) && (
             <section>
               <div className="modal-section">
-                <h3>What the files do not carry</h3>
+                <h3>
+                  {needPrice.length > 0
+                    ? 'Please update share prices for the tickers below'
+                    : 'Please enter the opening cash balance'}
+                </h3>
                 <span
                   className={`font-mono text-[12.5px] tabular-nums ${
                     issues.unpriced.length > 0 ? 'font-semibold text-warn' : 'text-ok'
                   }`}
                 >
                   {issues.unpriced.length > 0
-                    ? `${issues.unpriced.length} still to fill in`
+                    ? `Missing price data for ${issues.unpriced.length} ticker${
+                        issues.unpriced.length === 1 ? '' : 's'
+                      }`
                     : 'all filled in'}
                 </span>
               </div>
-
-              {needPrice.length > 0 && (
-                <p className="mb-4 max-w-2xl text-[13.5px] leading-relaxed text-ink-soft">
-                  The model export sets targets and bands, never prices, and a position the account
-                  does not hold has no price anywhere in these files.{' '}
-                  {carried
-                    ? `The ones marked below are what ${carried.from} held them at — the same security at a price a real export gave it. Overwrite any that have moved.`
-                    : 'A row left blank still imports — it arrives without a price, and the table asks for one before it will offer a trade on it.'}
-                </p>
-              )}
 
               {issues.needsCash && (
                 <label className="mb-5 block max-w-xs">
@@ -349,9 +345,6 @@ export default function ImportDialog({
                       <tr key={s.id} className={i % 2 ? 'bg-panel-alt' : 'bg-panel'}>
                         <td className="td font-sans text-[14px] font-bold">
                           {s.sym}
-                          {s.lotRounding === false && (
-                            <span className="badge ml-1.5 bg-warn-soft text-warn">no lot</span>
-                          )}
                         </td>
                         <td className="td text-[12.5px] text-ink-soft">{s.type ?? '—'}</td>
                         <td className="td">{s.target}%</td>

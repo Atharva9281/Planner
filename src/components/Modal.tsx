@@ -10,7 +10,7 @@ export default function Modal({
   children,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   width?: string;
   footer?: React.ReactNode;
   onClose: () => void;

@@ -121,7 +121,8 @@ export default function LoadNextAccount({
 
       {atRisk.length > 0 && (
         <p className="mt-4 text-[13.5px] leading-relaxed text-ink-soft">
-          This replaces {atRisk.join(' and ')}. Download the trade log first if you need it.
+          This replaces the currently loaded account. Download the trade log first, if needed,
+          before uploading the new account file.
         </p>
       )}
 
